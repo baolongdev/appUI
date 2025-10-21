@@ -17,6 +17,18 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      # ✅ CRITICAL FIX: Manually switch to main branch
+      - name: Switch to main branch
+        run: |
+          git fetch origin main
+          git checkout main
+          git pull origin main
+          echo "Current branch: $(git branch --show-current)"
+          echo "Current commit: $(git rev-parse HEAD)"
       
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -44,7 +56,6 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          # ✅ ElevenLabs secrets
           XI_BASE_URL: ${{ secrets.XI_BASE_URL }}
           XI_API_KEY: ${{ secrets.XI_API_KEY }}
           XI_AGENT_ID: ${{ secrets.XI_AGENT_ID }}
@@ -71,8 +82,18 @@ jobs:
           mv app/build/outputs/apk/release/app-release.apk \
              app/build/outputs/apk/release/${{ steps.version.outputs.apk_name }}
       
-      - name: Update update.json
+      - name: Update update.json and push
         run: |
+          # Verify we're on main branch
+          CURRENT_BRANCH=$(git branch --show-current)
+          echo "Current branch: $CURRENT_BRANCH"
+          
+          if [ "$CURRENT_BRANCH" != "main" ]; then
+            echo "❌ ERROR: Not on main branch!"
+            exit 1
+          fi
+          
+          # Generate update.json
           RELEASE_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           
           cat > update.json << EOF
@@ -86,11 +107,23 @@ jobs:
           }
           EOF
           
+          # Display for verification
+          echo "Generated update.json:"
+          cat update.json
+          
+          # Configure git
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
+          
+          # Commit and push
           git add update.json
-          git diff --staged --quiet || git commit -m "Update to version ${{ steps.version.outputs.version }}"
-          git push
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: update to version ${{ steps.version.outputs.version }}"
+            git push origin main
+            echo "✅ update.json pushed to main branch"
+          else
+            echo "ℹ️ No changes to update.json"
+          fi
       
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -101,6 +134,9 @@ jobs:
             
             ### Download
             📥 [Download APK](https://github.com/baolongdev/appUI/releases/download/${{ github.ref_name }}/${{ steps.version.outputs.apk_name }})
+            
+            ### Update Information
+            📄 [update.json](https://raw.githubusercontent.com/baolongdev/appUI/main/update.json)
             
             ---
             *Version Code: ${{ steps.version.outputs.version_code }}*
