@@ -1,0 +1,32 @@
+# ===== IDE FILES =====
+*.iml
+.DS_Store
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+
+# ===== BUILD FILES =====
+.gradle/
+build/
+/captures
+.externalNativeBuild
+.cxx
+app/release/
+
+# ===== SENSITIVE FILES =====
+# Configuration
+local.properties
+keystore.properties
+
+# Keystores
+*.keystore
+*.jks
+release.keystore
+keystore.base64
+
+# ===== TEMPORARY FILES =====
+*.log
+*.tmp

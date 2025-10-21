@@ -1,0 +1,213 @@
+import java.util.Properties
+import java.io.FileInputStream
+import java.io.File
+
+plugins {
+    alias(libs.plugins.androidApplication)
+    alias(libs.plugins.kotlinAndroid)
+    alias(libs.plugins.hilt)
+    alias(libs.plugins.kotlinCompose)
+    kotlin("kapt")
+}
+
+// ✅ Version configuration
+object AppVersion {
+    const val major = 1
+    const val minor = 0
+    const val patch = 1
+    const val code = major * 10000 + minor * 100 + patch // 10000
+    const val name = "$major.$minor.$patch"
+}
+
+android {
+    namespace = "com.example.appui"
+    compileSdk = 36
+
+    // ✅ Load local.properties (for sensitive data)
+    val localPropertiesFile = rootProject.file("local.properties")
+    val localProperties = Properties()
+    if (localPropertiesFile.exists()) {
+        localProperties.load(FileInputStream(localPropertiesFile))
+    }
+
+    defaultConfig {
+        applicationId = "com.example.appui"
+        minSdk = 26
+        targetSdk = 36
+        versionCode = AppVersion.code
+        versionName = AppVersion.name
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables { useSupportLibrary = true }
+
+        // ✅ SECURED: ElevenLabs config from local.properties or env
+        buildConfigField("String", "ELEVENLABS_BASE_URL",
+            "\"${localProperties.getProperty("XI_BASE_URL")
+                ?: System.getenv("XI_BASE_URL")
+                ?: "https://api.elevenlabs.io"}\"")
+
+        buildConfigField("String", "ELEVENLABS_API_KEY",
+            "\"${localProperties.getProperty("XI_API_KEY")
+                ?: System.getenv("XI_API_KEY")
+                ?: ""}\"")
+
+        buildConfigField("String", "ELEVENLABS_AGENT_ID",
+            "\"${localProperties.getProperty("XI_AGENT_ID")
+                ?: System.getenv("XI_AGENT_ID")
+                ?: ""}\"")
+
+        // ✅ GitHub Update config (public - OK to hardcode)
+        buildConfigField("String", "GITHUB_OWNER",
+            "\"${localProperties.getProperty("GITHUB_OWNER")
+                ?: "baolongdev"}\"")
+
+        buildConfigField("String", "GITHUB_REPO",
+            "\"${localProperties.getProperty("GITHUB_REPO")
+                ?: "appUI"}\"")
+
+        buildConfigField("String", "UPDATE_JSON_URL",
+            "\"${localProperties.getProperty("UPDATE_JSON_URL")
+                ?: "https://raw.githubusercontent.com/baolongdev/appUI/main/update.json"}\"")
+    }
+
+    // ✅ Load keystore properties
+    val keystorePropertiesFile = rootProject.file("keystore.properties")
+    val keystoreProperties = Properties()
+    val useKeystoreFile = keystorePropertiesFile.exists()
+
+    if (useKeystoreFile) {
+        keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+    }
+
+    // ✅ Signing configs
+    signingConfigs {
+        create("release") {
+            if (useKeystoreFile) {
+                // LOCAL: From keystore.properties
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                println("✅ Using keystore from keystore.properties")
+            } else {
+                // CI/CD: From environment variables
+                val envKeystoreFile = System.getenv("KEYSTORE_FILE")
+                if (envKeystoreFile != null) {
+                    // ✅ FIX: Use rootProject.file() instead of file()
+                    val keystoreFile = rootProject.file(envKeystoreFile)
+
+                    if (keystoreFile.exists()) {
+                        storeFile = keystoreFile
+                        storePassword = System.getenv("KEYSTORE_PASSWORD")
+                        keyAlias = System.getenv("KEY_ALIAS")
+                        keyPassword = System.getenv("KEY_PASSWORD")
+                        println("✅ Using keystore from environment: ${keystoreFile.absolutePath}")
+                    } else {
+                        println("⚠️ Keystore not found: ${keystoreFile.absolutePath}")
+                    }
+                } else {
+                    println("⚠️ No KEYSTORE_FILE environment variable")
+                }
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            signingConfig = signingConfigs.getByName("release")
+        }
+
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+        freeCompilerArgs += "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
+    }
+
+    packaging {
+        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+}
+
+dependencies {
+    // Compose BOM
+    implementation(platform(libs.composeBom))
+    androidTestImplementation(platform(libs.composeBom))
+
+    implementation(libs.androidxCoreKtx)
+    implementation(libs.activityCompose)
+    implementation(libs.composeMaterial3)
+    implementation(libs.navigationCompose)
+    implementation(libs.lifecycleRuntimeKtx)
+    implementation(libs.lifecycleViewmodelCompose)
+
+    // Hilt
+    implementation(libs.hiltAndroid)
+    kapt(libs.hiltCompiler)
+    implementation(libs.hiltNavigationCompose)
+
+    // Coroutines
+    implementation(libs.coroutinesAndroid)
+
+    // Network
+    implementation(libs.retrofit)
+    implementation(libs.converterMoshi)
+    implementation(libs.okhttp)
+    implementation(libs.okhttpLogging)
+    implementation(libs.moshi)
+
+    // Gson for GitHub API
+    implementation(libs.converterGson)
+    implementation(libs.gson)
+
+    // ElevenLabs Android SDK
+    implementation(libs.elevenlabsAndroid)
+
+    // WorkManager
+    implementation(libs.workRuntimeKtx)
+    implementation(libs.hiltWork)
+    kapt(libs.androidxHiltCompiler)
+
+    // Storage / Security
+    implementation(libs.datastore)
+    implementation(libs.securityCrypto)
+
+    // TFLite
+    implementation(libs.tflite)
+
+    // UI
+    implementation(libs.androidxAppcompat)
+    implementation(libs.material)
+    implementation(libs.materialIconsExtended)
+    debugImplementation(libs.uiTooling)
+    debugImplementation(libs.uiToolingPreview)
+
+    // Test
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidxJunit)
+    androidTestImplementation(libs.androidxEspressoCore)
+}

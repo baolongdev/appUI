@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Basic contrast colors -->
+    <color name="black">#000000</color>
+    <color name="white">#FFFFFF</color>
+
+    <!-- Brand accent colors -->
+    <color name="accent">#FF5722</color> <!-- cam đậm -->
+    <color name="accent_variant">#E64A19</color> <!-- cam tối -->
+
+    <!-- Compose Material theme compatibility -->
+    <color name="colorPrimary">@color/black</color>
+    <color name="colorPrimaryVariant">@color/accent_variant</color>
+    <color name="colorOnPrimary">@color/white</color>
+    <color name="colorSecondary">@color/accent</color>
+    <color name="colorOnSecondary">@color/black</color>
+</resources>

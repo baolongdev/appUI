@@ -1,0 +1,109 @@
+[versions]
+agp = "8.13.0"
+converterGson = "2.9.0"
+gson = "2.10.1"
+hiltWork = "1.1.0"
+hiltCompiler = "1.1.0"
+kotlin = "2.0.21"
+
+# Compose & AndroidX
+coreKtx = "1.17.0"
+activityCompose = "1.9.3"
+composeBom = "2024.10.01"
+composeCompiler = "1.7.0"          # <-- thêm biến compiler rõ ràng
+material3 = "1.3.0"
+navigationCompose = "2.8.3"
+lifecycle = "2.8.6"
+
+# DI / Coroutines
+hilt = "2.51.1"
+hiltNavCompose = "1.2.0"
+coroutines = "1.9.0"
+
+# Network
+retrofit = "2.11.0"
+okhttp = "4.12.0"
+moshi = "1.15.1"
+
+# Play Core (In-App Updates)
+playCore = "2.1.0"
+
+# Storage / Security
+datastore = "1.1.1"
+securityCrypto = "1.1.0-alpha06"
+
+# TFLite (optional KWS/VAD)
+tflite = "2.14.0"
+
+# Test
+junit = "4.13.2"
+junitVersion = "1.3.0"
+espressoCore = "3.7.0"
+
+# UI XML base
+appcompat = "1.7.1"
+material = "1.13.0"
+
+# ElevenLabs Android SDK
+elevenlabs = "0.1.0" # cập nhật theo docs của bạn
+workRuntimeKtx = "2.9.0"
+
+[libraries]
+androidxCoreKtx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+
+# Compose (BOM + libs)
+androidxHiltCompiler = { module = "androidx.hilt:hilt-compiler", version.ref = "hiltCompiler" }
+composeBom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+activityCompose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+composeMaterial3 = { group = "androidx.compose.material3", name = "material3", version.ref = "material3" }
+converterGson = { module = "com.squareup.retrofit2:converter-gson", version.ref = "converterGson" }
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+hiltWork = { module = "androidx.hilt:hilt-work", version.ref = "hiltWork" }
+materialIconsExtended = { module = "androidx.compose.material:material-icons-extended" }
+navigationCompose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
+lifecycleRuntimeKtx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
+lifecycleViewmodelCompose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+
+# Hilt & Coroutines
+hiltAndroid = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
+hiltCompiler = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }
+hiltNavigationCompose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltNavCompose" }
+coroutinesAndroid = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+
+# Network
+retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
+converterMoshi = { group = "com.squareup.retrofit2", name = "converter-moshi", version.ref = "retrofit" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+okhttpLogging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
+moshi = { group = "com.squareup.moshi", name = "moshi-kotlin", version.ref = "moshi" }
+
+# Play Core
+playcoreKtx = { group = "com.google.android.play", name = "app-update-ktx", version.ref = "playCore" }
+
+# Storage / Security
+datastore = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
+securityCrypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
+
+# TFLite
+tflite = { group = "org.tensorflow", name = "tensorflow-lite", version.ref = "tflite" }
+
+# ElevenLabs SDK
+elevenlabsAndroid = { group = "io.elevenlabs", name = "elevenlabs-android", version.ref = "elevenlabs" }
+
+# UI XML base
+androidxAppcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+material = { group = "com.google.android.material", name = "material", version.ref = "material" }
+
+# Test
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+androidxJunit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
+androidxEspressoCore = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
+uiTooling = { module = "androidx.compose.ui:ui-tooling" }
+uiToolingPreview = { module = "androidx.compose.ui:ui-tooling-preview" }
+workRuntimeKtx = { module = "androidx.work:work-runtime-ktx", version.ref = "workRuntimeKtx" }
+
+[plugins]
+androidApplication = { id = "com.android.application", version.ref = "agp" }
+kotlinAndroid = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+kotlinCompose     = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- ⚙️ Cho phép HTTP nếu bạn đang test localhost hoặc API chưa có HTTPS -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+    </domain-config>
+
+    <!-- ⚙️ Nếu bạn dùng ElevenLabs API qua HTTPS (nên có), bạn có thể thêm domain dưới đây -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">api.elevenlabs.io</domain>
+    </domain-config>
+</network-security-config>
