@@ -1,4 +1,3 @@
-// core/update/work/UpdateCheckWorker.kt
 package com.example.appui.core.update.work
 
 import android.app.NotificationChannel
@@ -12,6 +11,7 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.*
 import com.example.appui.MainActivity
 import com.example.appui.R
+import com.example.appui.data.datastore.UpdatePreferences
 import com.example.appui.domain.usecase.CheckAppUpdateUseCase
 import com.example.appui.utils.Either
 import dagger.assisted.Assisted
@@ -22,7 +22,8 @@ import java.util.concurrent.TimeUnit
 class UpdateCheckWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
-    private val checkAppUpdateUseCase: CheckAppUpdateUseCase
+    private val checkAppUpdateUseCase: CheckAppUpdateUseCase,
+    private val updatePreferences: UpdatePreferences
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -30,12 +31,29 @@ class UpdateCheckWorker @AssistedInject constructor(
             is Either.Left -> Result.failure()
             is Either.Right -> {
                 val updateInfo = result.value
-                if (updateInfo.isNewer) {
+
+                // ✅ Only show if update available AND not snoozed/visited
+                if (updateInfo.isNewer && shouldShowNotification(updateInfo.version)) {
                     showUpdateNotification(updateInfo.version)
                 }
                 Result.success()
             }
         }
+    }
+
+    /**
+     * ✅ UPDATED: Check if should show notification
+     */
+    private suspend fun shouldShowNotification(version: String): Boolean {
+        // Check if user visited update screen
+        val isScreenVisited = updatePreferences.isUpdateScreenVisited()
+        if (isScreenVisited) return false
+
+        // Check if snoozed for this version
+        val isSnoozed = updatePreferences.isUpdateSnoozed(version)
+        if (isSnoozed) return false
+
+        return true
     }
 
     private fun showUpdateNotification(version: String) {
@@ -44,10 +62,11 @@ class UpdateCheckWorker @AssistedInject constructor(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "App Updates",
+                "Cập nhật ứng dụng",
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "Notifications for app updates"
+                description = "Thông báo khi có phiên bản mới"
+                setShowBadge(true)
             }
             notificationManager.createNotificationChannel(channel)
         }
@@ -71,6 +90,10 @@ class UpdateCheckWorker @AssistedInject constructor(
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText("Nhấn để xem chi tiết và tải xuống phiên bản $version")
+            )
             .build()
 
         notificationManager.notify(NOTIFICATION_ID, notification)
@@ -102,6 +125,10 @@ class UpdateCheckWorker @AssistedInject constructor(
                 ExistingPeriodicWorkPolicy.KEEP,
                 request
             )
+        }
+
+        fun cancel(context: Context) {
+            WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
         }
     }
 }

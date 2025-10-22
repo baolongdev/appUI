@@ -1,23 +1,19 @@
 package com.example.appui.ui.screen.home
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Upgrade
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.appui.ui.screen.agents.AgentsViewModel
+import com.example.appui.ui.screen.history.ConversationHistoryContent
 import com.example.appui.ui.screen.home.components.Sidebar
 import com.example.appui.ui.screen.home.components.SidebarContent
 import com.example.appui.ui.screen.home.components.SidebarPosition
@@ -38,7 +34,6 @@ fun HomeScreen(
     val homeState by viewModel.ui.collectAsState()
     val agentsState by agentsViewModel.ui.collectAsState()
 
-    // ✅ Show popup on first update detection
     LaunchedEffect(homeState.hasUpdate) {
         if (homeState.hasUpdate && !homeState.showUpdateDialog) {
             viewModel.showUpdateDialog()
@@ -46,18 +41,17 @@ fun HomeScreen(
     }
 
     Box(Modifier.fillMaxSize()) {
-        // Sidebar
         HomeSidebar(
             isOpen = homeState.sidebarOpen,
             currentSection = homeState.section,
+            currentVersion = homeState.currentVersion,
             onSectionSelected = viewModel::selectSection,
             onToggleSidebar = viewModel::toggleSidebar,
             onSettings = onNavigateToUpdate,
-            onLogout = { /* TODO */ },
-            hasUpdate = homeState.hasUpdate // ✅ Pass update status
+            onLogout = {},
+            hasUpdate = homeState.hasUpdate
         )
 
-        // Main content
         HomeScaffold(
             sidebarOpen = homeState.sidebarOpen,
             currentSection = homeState.section,
@@ -68,7 +62,6 @@ fun HomeScreen(
             onClearAgentDetail = agentsViewModel::clearDetail
         )
 
-        // ✅ Update notification popup
         if (homeState.showUpdateDialog) {
             UpdateNotificationDialog(
                 version = homeState.updateVersion,
@@ -82,25 +75,26 @@ fun HomeScreen(
     }
 }
 
-/**
- * Sidebar với animated width và update badge
- */
 @Composable
 private fun HomeSidebar(
     isOpen: Boolean,
     currentSection: HomeSection,
+    currentVersion: String,
     onSectionSelected: (HomeSection) -> Unit,
     onToggleSidebar: () -> Unit,
     onSettings: () -> Unit,
     onLogout: () -> Unit,
-    hasUpdate: Boolean // ✅ Update badge flag
+    hasUpdate: Boolean
 ) {
     val sidebarWidth = 192.dp
     val collapsedWidth = 84.dp
 
     val animatedWidth by animateDpAsState(
         targetValue = if (isOpen) sidebarWidth else collapsedWidth,
-        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
         label = "sidebar-width"
     )
 
@@ -113,80 +107,102 @@ private fun HomeSidebar(
     ) {
         SidebarContent(
             currentSection = currentSection,
+            currentVersion = currentVersion,
             onSectionSelected = onSectionSelected,
             onToggleSidebar = onToggleSidebar,
             onSettings = onSettings,
             onLogout = onLogout,
             isCollapsed = !isOpen,
-            hasUpdate = hasUpdate // ✅ Pass to SidebarContent
+            hasUpdate = hasUpdate
         )
     }
 }
 
-/**
- * Update notification dialog
- */
 @Composable
 private fun UpdateNotificationDialog(
     version: String,
     onDismiss: () -> Unit,
     onUpdate: () -> Unit
 ) {
-    val extendedColors = MaterialTheme.extendedColors
+    val successColor = MaterialTheme.extendedColors.success
 
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = {
-            Icon(
-                Icons.Default.Upgrade,
-                contentDescription = null,
-                tint = extendedColors.success,
-                modifier = Modifier.size(32.dp)
-            )
+            Surface(
+                shape = androidx.compose.foundation.shape.CircleShape,
+                color = successColor.copy(alpha = 0.2f),
+                modifier = Modifier.size(56.dp)
+            ) {
+                Box(contentAlignment = androidx.compose.ui.Alignment.Center) {
+                    Icon(
+                        Icons.Default.Upgrade,
+                        null,
+                        modifier = Modifier.size(28.dp),
+                        tint = successColor
+                    )
+                }
+            }
         },
         title = {
             Text(
                 "Phiên bản mới có sẵn!",
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     "Version $version đã sẵn sàng để cài đặt.",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyLarge
                 )
-                Text(
-                    "Bạn có muốn cập nhật ngay bây giờ?",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "Cập nhật ngay để trải nghiệm tính năng mới",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = onUpdate,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = extendedColors.success
+                    containerColor = successColor
                 )
             ) {
-                Text("Cập nhật")
+                Icon(Icons.Default.Upgrade, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Cập nhật ngay")
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Để sau")
             }
-        },
-        containerColor = MaterialTheme.colorScheme.surface,
-        titleContentColor = MaterialTheme.colorScheme.onSurface,
-        textContentColor = MaterialTheme.colorScheme.onSurface
+        }
     )
 }
 
-/**
- * Main scaffold
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HomeScaffold(
@@ -208,7 +224,10 @@ private fun HomeScaffold(
         } else {
             collapsedWidth + sidebarGap
         },
-        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
         label = "content-padding"
     )
 
@@ -231,9 +250,11 @@ private fun HomeScaffold(
                 detailError = agentsState.error,
                 onOpenAgent = onLoadAgentDetail,
                 onPlayAgent = onVoiceClick,
-                onToggleFavorite = { _, _ -> /* TODO */ },
+                onToggleFavorite = { _, _ -> },
                 onCloseDetail = onClearAgentDetail
             )
+
+            HomeSection.HISTORY -> ConversationHistoryContent()
         }
     }
 }

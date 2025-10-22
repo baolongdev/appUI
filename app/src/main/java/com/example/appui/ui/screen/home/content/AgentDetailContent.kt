@@ -15,7 +15,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.appui.data.remote.elevenlabs.GetAgentResponseModel
+import com.example.appui.data.remote.elevenlabs.models.GetAgentDetailResponse
 import com.example.appui.ui.screen.home.components.SidebarHeader
 import com.example.appui.ui.screen.home.components.SidebarScrollableContent
 import com.example.appui.ui.theme.Spacing
@@ -23,20 +23,17 @@ import com.example.appui.ui.theme.extendedColors
 
 @Composable
 fun ColumnScope.AgentDetailContent(
-    agent: GetAgentResponseModel?,
+    agent: GetAgentDetailResponse?,
     isLoading: Boolean,
     error: String?,
     onClose: () -> Unit,
     onPlay: (String) -> Unit
 ) {
-    val extendedColors = MaterialTheme.extendedColors
-
     SidebarHeader(
         title = "Chi tiết Agent",
         onClose = onClose
     )
 
-    // ✅ Use HorizontalDivider directly instead of SidebarDivider
     HorizontalDivider(
         modifier = Modifier
             .fillMaxWidth()
@@ -46,26 +43,14 @@ fun ColumnScope.AgentDetailContent(
     Spacer(Modifier.height(Spacing.Small))
 
     when {
-        isLoading -> {
-            LoadingState()
-        }
-
-        error != null -> {
-            ErrorState(error = error)
-        }
-
+        isLoading -> LoadingState()
+        error != null -> ErrorState(error = error)
         agent != null -> {
             SidebarScrollableContent {
-                AgentDetailInfo(
-                    agent = agent,
-                    onPlay = onPlay
-                )
+                AgentDetailInfo(agent = agent, onPlay = onPlay)
             }
         }
-
-        else -> {
-            EmptyState()
-        }
+        else -> EmptyState()
     }
 }
 
@@ -142,11 +127,10 @@ private fun ColumnScope.EmptyState() {
 
 @Composable
 private fun AgentDetailInfo(
-    agent: GetAgentResponseModel,
+    agent: GetAgentDetailResponse,
     onPlay: (String) -> Unit
 ) {
     val clipboard = LocalClipboardManager.current
-    val extendedColors = MaterialTheme.extendedColors
 
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Medium)) {
         AgentHeaderCard(
@@ -159,7 +143,8 @@ private fun AgentDetailInfo(
             icon = Icons.Outlined.Audiotrack,
             title = "Cấu hình TTS"
         ) {
-            val tts = agent.conversationConfig.tts
+            // ✅ FIX: Safe call operator
+            val tts = agent.conversationConfig?.tts
             ConfigRow("Model", tts?.modelId)
             ConfigRow("Voice", tts?.voiceId)
             ConfigRow("Định dạng", tts?.agentOutputAudioFormat)
@@ -171,7 +156,8 @@ private fun AgentDetailInfo(
             icon = Icons.Outlined.GraphicEq,
             title = "Cấu hình ASR"
         ) {
-            val asr = agent.conversationConfig.asr
+            // ✅ FIX: Safe call operator
+            val asr = agent.conversationConfig?.asr
             ConfigRow("Provider", asr?.provider)
             ConfigRow("Chất lượng", asr?.quality)
             ConfigRow("Định dạng Input", asr?.userInputAudioFormat)
@@ -181,7 +167,8 @@ private fun AgentDetailInfo(
             icon = Icons.Outlined.Timelapse,
             title = "Cấu hình Turn"
         ) {
-            val turn = agent.conversationConfig.turn
+            // ✅ FIX: Safe call operator
+            val turn = agent.conversationConfig?.turn
             ConfigRow("Chế độ", turn?.mode)
             ConfigRow("Timeout", turn?.turnTimeout?.let { "%.1fs".format(it) })
             ConfigRow("End-call Silence", turn?.silenceEndCallTimeout?.let { "%.1fs".format(it) })
@@ -191,7 +178,8 @@ private fun AgentDetailInfo(
             icon = Icons.Outlined.RecordVoiceOver,
             title = "Prompt Agent"
         ) {
-            val agentConfig = agent.conversationConfig.agent
+            // ✅ FIX: Safe call operator
+            val agentConfig = agent.conversationConfig?.agent
             ConfigRow("Tin nhắn đầu", agentConfig?.firstMessage)
             ConfigRow("Ngôn ngữ", agentConfig?.language)
         }
@@ -200,7 +188,7 @@ private fun AgentDetailInfo(
 
 @Composable
 private fun AgentHeaderCard(
-    agent: GetAgentResponseModel,
+    agent: GetAgentDetailResponse,
     clipboard: androidx.compose.ui.platform.ClipboardManager,
     onPlay: (String) -> Unit
 ) {
@@ -281,15 +269,9 @@ private fun AgentHeaderCard(
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 )
             ) {
-                Icon(
-                    Icons.Outlined.RecordVoiceOver,
-                    contentDescription = null
-                )
+                Icon(Icons.Outlined.RecordVoiceOver, contentDescription = null)
                 Spacer(Modifier.width(Spacing.Small))
-                Text(
-                    "Chạy Agent",
-                    fontWeight = FontWeight.SemiBold
-                )
+                Text("Chạy Agent", fontWeight = FontWeight.SemiBold)
             }
         }
     }

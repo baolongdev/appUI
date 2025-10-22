@@ -10,6 +10,7 @@ import com.example.appui.ui.screen.home.HomeScreen
 import com.example.appui.ui.screen.voice.VoiceScreen
 import com.example.appui.ui.screen.agents.AgentsScreen
 import com.example.appui.ui.screen.update.UpdateScreen
+import com.example.appui.ui.screen.history.ConversationHistoryScreen // ✅ NEW
 
 @Composable
 fun AppNav() {
@@ -21,7 +22,7 @@ fun AppNav() {
             HomeScreen(
                 onVoiceClick = { agentId -> nav.navigate(Routes.voice(agentId)) },
                 onAgentsClick = { nav.navigate(Routes.AGENTS) },
-                onNavigateToUpdate = { nav.navigate(Routes.UPDATE) }
+                onNavigateToUpdate = { nav.navigate(Routes.UPDATE) },
             )
         }
 
@@ -47,6 +48,13 @@ fun AppNav() {
         composable(Routes.AGENTS) {
             AgentsScreen(
                 onPlayAgent = { id -> nav.navigate(Routes.voice(id)) },
+                onNavigateBack = { nav.popBackStack() }
+            )
+        }
+
+        // Conversation History Screen
+        composable(Routes.HISTORY) {
+            ConversationHistoryScreen(
                 onNavigateBack = { nav.popBackStack() }
             )
         }

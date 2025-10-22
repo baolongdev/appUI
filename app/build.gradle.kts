@@ -1,13 +1,12 @@
 import java.util.Properties
 import java.io.FileInputStream
-import java.io.File
 
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.kotlinAndroid)
     alias(libs.plugins.hilt)
     alias(libs.plugins.kotlinCompose)
-    kotlin("kapt")
+    alias(libs.plugins.ksp)  // ✅ THAY kapt bằng ksp
 }
 
 // ✅ Version configuration
@@ -17,6 +16,7 @@ object AppVersion {
     const val patch = 1
     const val code = major * 10000 + minor * 100 + patch // 10000
     const val name = "$major.$minor.$patch"
+    const val dbVersion = 3 // ✅ Manual tracking
 }
 
 android {
@@ -40,7 +40,12 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
 
-        // ✅ SECURED: ElevenLabs config from local.properties or env
+        buildConfigField(
+            "String",
+            "GITHUB_TOKEN",
+            "\"${localProperties.getProperty("github.token", "")}\""
+        )
+
         buildConfigField("String", "ELEVENLABS_BASE_URL",
             "\"${localProperties.getProperty("XI_BASE_URL")
                 ?: System.getenv("XI_BASE_URL")
@@ -56,7 +61,6 @@ android {
                 ?: System.getenv("XI_AGENT_ID")
                 ?: ""}\"")
 
-        // ✅ GitHub Update config (public - OK to hardcode)
         buildConfigField("String", "GITHUB_OWNER",
             "\"${localProperties.getProperty("GITHUB_OWNER")
                 ?: "baolongdev"}\"")
@@ -83,17 +87,14 @@ android {
     signingConfigs {
         create("release") {
             if (useKeystoreFile) {
-                // LOCAL: From keystore.properties
                 storeFile = file(keystoreProperties["storeFile"] as String)
                 storePassword = keystoreProperties["storePassword"] as String
                 keyAlias = keystoreProperties["keyAlias"] as String
                 keyPassword = keystoreProperties["keyPassword"] as String
                 println("✅ Using keystore from keystore.properties")
             } else {
-                // CI/CD: From environment variables
                 val envKeystoreFile = System.getenv("KEYSTORE_FILE")
                 if (envKeystoreFile != null) {
-                    // ✅ FIX: Use rootProject.file() instead of file()
                     val keystoreFile = rootProject.file(envKeystoreFile)
 
                     if (keystoreFile.exists()) {
@@ -165,9 +166,9 @@ dependencies {
     implementation(libs.lifecycleRuntimeKtx)
     implementation(libs.lifecycleViewmodelCompose)
 
-    // Hilt
+    // Hilt - ✅ MIGRATION TO KSP
     implementation(libs.hiltAndroid)
-    kapt(libs.hiltCompiler)
+    ksp(libs.hiltCompiler)  // ✅ THAY kapt → ksp
     implementation(libs.hiltNavigationCompose)
 
     // Coroutines
@@ -187,10 +188,10 @@ dependencies {
     // ElevenLabs Android SDK
     implementation(libs.elevenlabsAndroid)
 
-    // WorkManager
+    // WorkManager - ✅ MIGRATION TO KSP
     implementation(libs.workRuntimeKtx)
     implementation(libs.hiltWork)
-    kapt(libs.androidxHiltCompiler)
+    ksp(libs.androidxHiltCompiler)  // ✅ THAY kapt → ksp
 
     // Storage / Security
     implementation(libs.datastore)
@@ -205,6 +206,17 @@ dependencies {
     implementation(libs.materialIconsExtended)
     debugImplementation(libs.uiTooling)
     debugImplementation(libs.uiToolingPreview)
+
+    // Markdown
+    implementation(libs.composeMarkdown)
+
+    // Permission handling
+    implementation(libs.accompanistPermissions)
+
+    // Room Database
+    implementation(libs.roomRuntime)
+    implementation(libs.roomKtx)
+    ksp(libs.roomCompiler)
 
     // Test
     testImplementation(libs.junit)

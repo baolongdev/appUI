@@ -12,294 +12,431 @@ import android.util.Log
 import androidx.annotation.RequiresApi
 
 /**
- * Max-loud AudioSessionManager:
- * - Route ưu tiên thiết bị ngoài (BT/USB/Wired) hoặc ép loa ngoài.
- * - MODE_IN_COMMUNICATION cho hội thoại (AEC/NS) + đặt max VOICE_CALL & MUSIC.
- * - LoudnessEnhancer (API 19+) + DynamicsProcessing (API 28+) để tăng gain có kiểm soát.
- * - Audio focus (không duck) + tự khôi phục max volume.
- * - Re-route khi thiết bị audio thay đổi.
+ * Professional audio session manager for voice conversations.
+ *
+ * Features:
+ * - Intelligent device routing (BT/USB/Wired/Speaker)
+ * - Audio focus management with ducking prevention
+ * - Dynamic audio enhancement (LoudnessEnhancer + DynamicsProcessing)
+ * - Automatic volume optimization
+ * - Mode-aware session management
+ *
+ * @property context Application context for audio services
  */
 class AudioSessionManager(private val context: Context) {
 
-    private val TAG = "AudioSessionManager"
-    private val am = context.getSystemService(Context.AUDIO_SERVICE) as SystemAudioManager
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as SystemAudioManager
 
-    // Focus
-    private var afr: AudioFocusRequest? = null
-    private var hasFocus = false
+    // Audio focus management
+    private var audioFocusRequest: AudioFocusRequest? = null
+    private var hasAudioFocus = false
 
-    // Boosters
-    private var le: LoudnessEnhancer? = null
-    private var dp: DynamicsProcessing? = null
-    private var boostDb: Int = 18 // 0..24 dB
+    // Audio enhancement
+    private var loudnessEnhancer: LoudnessEnhancer? = null
+    private var dynamicsProcessor: DynamicsProcessing? = null
+    private var currentBoostDb: Int = DEFAULT_BOOST_DB
 
-    // Cache state
-    private var _preferSpeakerCache = false
+    // Session state
+    private var preferSpeaker = false
 
-    /** Bắt đầu phiên ElevenLabs (có mic). */
+    /**
+     * Enters voice conversation mode with microphone support.
+     *
+     * Configures:
+     * - MODE_IN_COMMUNICATION for echo cancellation
+     * - Voice routing priority: BT SCO → USB → Wired → Speaker
+     * - Maximum voice call and music stream volumes
+     * - Audio enhancement boosters
+     *
+     * @param maxBoostDb Loudness boost in dB (0-24)
+     * @param preferSpeakerForMax Prefer built-in speaker for maximum volume
+     */
     fun enterVoiceSession(maxBoostDb: Int = 18, preferSpeakerForMax: Boolean = false) {
-        _preferSpeakerCache = preferSpeakerForMax
-        boostDb = maxBoostDb.coerceIn(0, 24)
-        try {
-            am.mode = SystemAudioManager.MODE_IN_COMMUNICATION
-            requestFocus(AudioAttributes.USAGE_VOICE_COMMUNICATION, AudioAttributes.CONTENT_TYPE_SPEECH)
-            routeForVoiceCall(maximize = true, preferSpeakerForMax = preferSpeakerForMax)
-            logVol("enterVoiceSession")
-        } catch (e: Exception) {
-            Log.w(TAG, "enterVoiceSession failed: ${e.message}")
+        preferSpeaker = preferSpeakerForMax
+        currentBoostDb = maxBoostDb.coerceIn(MIN_BOOST_DB, MAX_BOOST_DB)
+
+        Log.i(TAG, "Entering voice session (boost=${currentBoostDb}dB, preferSpeaker=$preferSpeaker)")
+
+        runCatching {
+            audioManager.mode = SystemAudioManager.MODE_IN_COMMUNICATION
+            requestAudioFocus(AudioAttributes.USAGE_VOICE_COMMUNICATION, AudioAttributes.CONTENT_TYPE_SPEECH)
+            routeForVoiceCall(maximize = true, preferSpeaker = preferSpeaker)
+            logVolumeState("enterVoiceSession")
+        }.onFailure { e ->
+            Log.e(TAG, "Failed to enter voice session", e)
         }
     }
 
-    /** Chỉ phát media (không cần mic BT) – to nhất. */
+    /**
+     * Enters media playback mode without microphone.
+     *
+     * Optimized for:
+     * - TTS output
+     * - High-quality audio playback
+     * - Maximum volume output
+     *
+     * @param maxBoostDb Loudness boost in dB (0-24)
+     * @param preferSpeakerForMax Prefer built-in speaker
+     */
     fun enterMediaLoudSession(maxBoostDb: Int = 20, preferSpeakerForMax: Boolean = true) {
-        _preferSpeakerCache = preferSpeakerForMax
-        boostDb = maxBoostDb.coerceIn(0, 24)
-        try {
-            am.mode = SystemAudioManager.MODE_NORMAL
-            requestFocus(AudioAttributes.USAGE_MEDIA, AudioAttributes.CONTENT_TYPE_MUSIC)
-            routeForMedia(maximize = true, preferSpeakerForMax = preferSpeakerForMax)
-            logVol("enterMediaLoudSession")
-        } catch (e: Exception) {
-            Log.w(TAG, "enterMediaLoudSession failed: ${e.message}")
+        preferSpeaker = preferSpeakerForMax
+        currentBoostDb = maxBoostDb.coerceIn(MIN_BOOST_DB, MAX_BOOST_DB)
+
+        Log.i(TAG, "Entering media session (boost=${currentBoostDb}dB, preferSpeaker=$preferSpeaker)")
+
+        runCatching {
+            audioManager.mode = SystemAudioManager.MODE_NORMAL
+            requestAudioFocus(AudioAttributes.USAGE_MEDIA, AudioAttributes.CONTENT_TYPE_MUSIC)
+            routeForMedia(maximize = true, preferSpeaker = preferSpeaker)
+            logVolumeState("enterMediaLoudSession")
+        }.onFailure { e ->
+            Log.e(TAG, "Failed to enter media session", e)
         }
     }
 
-    /** Kết thúc phiên – khôi phục mặc định. */
+    /**
+     * Exits current audio session and restores defaults.
+     */
     fun exitVoiceSession() {
-        try {
-            abandonFocus()
-            am.mode = SystemAudioManager.MODE_NORMAL
-            clearRouting()
-            disableBoosters()
-            Log.d(TAG, "exitVoiceSession → MODE_NORMAL")
-        } catch (e: Exception) {
-            Log.w(TAG, "exitVoiceSession failed: ${e.message}")
+        Log.i(TAG, "Exiting audio session")
+
+        runCatching {
+            abandonAudioFocus()
+            audioManager.mode = SystemAudioManager.MODE_NORMAL
+            clearDeviceRouting()
+            disableAudioBoosters()
+        }.onFailure { e ->
+            Log.e(TAG, "Failed to exit session", e)
         }
     }
 
+    /**
+     * Adjusts boost gain dynamically during session.
+     *
+     * @param db Boost level in dB (0-24)
+     */
     fun setBoostGainDb(db: Int) {
-        boostDb = db.coerceIn(0, 24)
-        runCatching { le?.setTargetGain(boostDb * 100) }
-        if (Build.VERSION.SDK_INT >= 28) updateDynamicsProcessingGain()
-    }
+        currentBoostDb = db.coerceIn(MIN_BOOST_DB, MAX_BOOST_DB)
 
-    // ---------------- Routing ----------------
+        runCatching {
+            loudnessEnhancer?.setTargetGain(currentBoostDb * 100)
 
-    @Suppress("DEPRECATION")
-    fun routeForVoiceCall(maximize: Boolean, preferSpeakerForMax: Boolean) {
-        try {
-            am.mode = SystemAudioManager.MODE_IN_COMMUNICATION
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val target = if (preferSpeakerForMax) {
-                    am.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-                } else {
-                    am.availableCommunicationDevices.firstOrNull {
-                        it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                                it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
-                                it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET
-                    } ?: am.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-                }
-                if (target != null) am.setCommunicationDevice(target) else am.isSpeakerphoneOn = true
-            } else {
-                if (preferSpeakerForMax) {
-                    am.isSpeakerphoneOn = true
-                    runCatching { am.stopBluetoothSco(); am.isBluetoothScoOn = false }
-                } else if (am.isBluetoothScoAvailableOffCall) {
-                    am.startBluetoothSco()
-                    am.isBluetoothScoOn = true
-                }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                updateDynamicsProcessingGain()
             }
 
-            if (maximize) {
-                setStreamsToMax(SystemAudioManager.STREAM_VOICE_CALL, SystemAudioManager.STREAM_MUSIC)
-                enableBoosters()
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "routeForVoiceCall failed: ${e.message}")
+            Log.d(TAG, "Boost gain updated to ${currentBoostDb}dB")
+        }.onFailure { e ->
+            Log.w(TAG, "Failed to update boost gain", e)
         }
     }
 
+    // Audio routing
+
     @Suppress("DEPRECATION")
-    fun routeForMedia(maximize: Boolean, preferSpeakerForMax: Boolean) {
-        try {
-            am.mode = SystemAudioManager.MODE_NORMAL
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                if (preferSpeakerForMax) {
-                    val spk = am.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-                    if (spk != null) am.setCommunicationDevice(spk) else am.clearCommunicationDevice()
-                } else am.clearCommunicationDevice()
-            } else {
-                am.isSpeakerphoneOn = preferSpeakerForMax
-            }
+    private fun routeForVoiceCall(maximize: Boolean, preferSpeaker: Boolean) {
+        audioManager.mode = SystemAudioManager.MODE_IN_COMMUNICATION
 
-            if (maximize) {
-                setStreamsToMax(SystemAudioManager.STREAM_MUSIC)
-                enableBoosters()
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "routeForMedia failed: ${e.message}")
-        }
-    }
-
-    private fun clearRouting() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            am.clearCommunicationDevice()
+            routeForVoiceCallModern(preferSpeaker)
         } else {
-            am.isSpeakerphoneOn = false
-            runCatching { am.stopBluetoothSco(); am.isBluetoothScoOn = false }
+            routeForVoiceCallLegacy(preferSpeaker)
+        }
+
+        if (maximize) {
+            setStreamsToMaxVolume(SystemAudioManager.STREAM_VOICE_CALL, SystemAudioManager.STREAM_MUSIC)
+            enableAudioBoosters()
         }
     }
 
-    // ---------------- Focus ----------------
-
-    private fun requestFocus(usage: Int, content: Int) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val attrs = AudioAttributes.Builder().setUsage(usage).setContentType(content).build()
-            afr = AudioFocusRequest.Builder(SystemAudioManager.AUDIOFOCUS_GAIN)
-                .setAudioAttributes(attrs)
-                .setAcceptsDelayedFocusGain(true)
-                .setOnAudioFocusChangeListener {
-                    if (it == SystemAudioManager.AUDIOFOCUS_GAIN ||
-                        it == SystemAudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
-                        maybeRestoreMax("focus=$it")
-                    }
-                }
-                .build()
-            hasFocus = am.requestAudioFocus(afr!!) == SystemAudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun routeForVoiceCallModern(preferSpeaker: Boolean) {
+        val targetDevice = if (preferSpeaker) {
+            audioManager.availableCommunicationDevices.firstOrNull {
+                it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+            }
         } else {
-            val stream = if (usage == AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                SystemAudioManager.STREAM_VOICE_CALL else SystemAudioManager.STREAM_MUSIC
+            findPreferredCommunicationDevice()
+        }
+
+        targetDevice?.let {
+            audioManager.setCommunicationDevice(it)
+            Log.d(TAG, "Routed to: ${getDeviceTypeName(it.type)}")
+        } ?: run {
+            audioManager.isSpeakerphoneOn = true
+            Log.d(TAG, "Defaulted to speakerphone")
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun findPreferredCommunicationDevice(): AudioDeviceInfo? {
+        return audioManager.availableCommunicationDevices.firstOrNull {
+            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                    it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+                    it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET
+        } ?: audioManager.availableCommunicationDevices.firstOrNull {
+            it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun routeForVoiceCallLegacy(preferSpeaker: Boolean) {
+        if (preferSpeaker) {
+            audioManager.isSpeakerphoneOn = true
+            runCatching {
+                audioManager.stopBluetoothSco()
+                audioManager.isBluetoothScoOn = false
+            }
+        } else if (audioManager.isBluetoothScoAvailableOffCall) {
+            audioManager.startBluetoothSco()
+            audioManager.isBluetoothScoOn = true
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun routeForMedia(maximize: Boolean, preferSpeaker: Boolean) {
+        audioManager.mode = SystemAudioManager.MODE_NORMAL
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (preferSpeaker) {
+                val speaker = audioManager.availableCommunicationDevices.firstOrNull {
+                    it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                }
+                speaker?.let { audioManager.setCommunicationDevice(it) }
+                    ?: audioManager.clearCommunicationDevice()
+            } else {
+                audioManager.clearCommunicationDevice()
+            }
+        } else {
+            audioManager.isSpeakerphoneOn = preferSpeaker
+        }
+
+        if (maximize) {
+            setStreamsToMaxVolume(SystemAudioManager.STREAM_MUSIC)
+            enableAudioBoosters()
+        }
+    }
+
+    private fun clearDeviceRouting() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            audioManager.clearCommunicationDevice()
+        } else {
             @Suppress("DEPRECATION")
-            hasFocus = am.requestAudioFocus({ fc ->
-                if (fc == SystemAudioManager.AUDIOFOCUS_GAIN ||
-                    fc == SystemAudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
-                    maybeRestoreMax("focus(legacy)=$fc")
-                }
-            }, stream, SystemAudioManager.AUDIOFOCUS_GAIN) == SystemAudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            audioManager.isSpeakerphoneOn = false
+            runCatching {
+                @Suppress("DEPRECATION")
+                audioManager.stopBluetoothSco()
+                @Suppress("DEPRECATION")
+                audioManager.isBluetoothScoOn = false
+            }
         }
-        Log.d(TAG, "requestFocus granted=$hasFocus")
     }
 
-    private fun abandonFocus() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-            afr?.let { am.abandonAudioFocusRequest(it) }
-        else @Suppress("DEPRECATION") am.abandonAudioFocus(null)
-        hasFocus = false
+    // Audio focus management
+
+    private fun requestAudioFocus(usage: Int, contentType: Int) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            requestAudioFocusModern(usage, contentType)
+        } else {
+            requestAudioFocusLegacy(usage)
+        }
+
+        Log.d(TAG, "Audio focus granted: $hasAudioFocus")
     }
 
-    // ---------------- Boosters ----------------
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun requestAudioFocusModern(usage: Int, contentType: Int) {
+        val attributes = AudioAttributes.Builder()
+            .setUsage(usage)
+            .setContentType(contentType)
+            .build()
 
-    private fun enableBoosters() {
-        enableLE()
-        if (Build.VERSION.SDK_INT >= 28) enableDP()
+        audioFocusRequest = AudioFocusRequest.Builder(SystemAudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(attributes)
+            .setAcceptsDelayedFocusGain(true)
+            .setOnAudioFocusChangeListener { focusChange ->
+                handleAudioFocusChange(focusChange)
+            }
+            .build()
+
+        hasAudioFocus = audioManager.requestAudioFocus(audioFocusRequest!!) ==
+                SystemAudioManager.AUDIOFOCUS_REQUEST_GRANTED
     }
 
-    private fun disableBoosters() {
-        disableLE()
-        if (Build.VERSION.SDK_INT >= 28) disableDP()
+    @Suppress("DEPRECATION")
+    private fun requestAudioFocusLegacy(usage: Int) {
+        val stream = if (usage == AudioAttributes.USAGE_VOICE_COMMUNICATION)
+            SystemAudioManager.STREAM_VOICE_CALL
+        else
+            SystemAudioManager.STREAM_MUSIC
+
+        hasAudioFocus = audioManager.requestAudioFocus(
+            { focusChange -> handleAudioFocusChange(focusChange) },
+            stream,
+            SystemAudioManager.AUDIOFOCUS_GAIN
+        ) == SystemAudioManager.AUDIOFOCUS_REQUEST_GRANTED
     }
 
-    /** LoudnessEnhancer trên session 0 (output mix). */
-    private fun enableLE() {
+    private fun handleAudioFocusChange(focusChange: Int) {
+        when (focusChange) {
+            SystemAudioManager.AUDIOFOCUS_GAIN,
+            SystemAudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                restoreMaxVolume("focus=$focusChange")
+            }
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.abandonAudioFocus(null)
+        }
+        hasAudioFocus = false
+    }
+
+    // Audio enhancement
+
+    private fun enableAudioBoosters() {
+        enableLoudnessEnhancer()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            enableDynamicsProcessing()
+        }
+    }
+
+    private fun disableAudioBoosters() {
+        disableLoudnessEnhancer()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            disableDynamicsProcessing()
+        }
+    }
+
+    private fun enableLoudnessEnhancer() {
         runCatching {
-            if (le == null) le = LoudnessEnhancer(0)
-            le?.setTargetGain(boostDb * 100)
-            le?.enabled = true
-            Log.d(TAG, "LE ON @ ${boostDb}dB")
-        }.onFailure { Log.w(TAG, "LE enable failed: ${it.message}") }
+            if (loudnessEnhancer == null) {
+                loudnessEnhancer = LoudnessEnhancer(0)
+            }
+            loudnessEnhancer?.apply {
+                setTargetGain(currentBoostDb * 100)
+                enabled = true
+            }
+            Log.d(TAG, "LoudnessEnhancer enabled @ ${currentBoostDb}dB")
+        }.onFailure { e ->
+            Log.w(TAG, "Failed to enable LoudnessEnhancer", e)
+        }
     }
 
-    private fun disableLE() {
-        runCatching { le?.enabled = false; le?.release() }
-        le = null
-    }
-
-    /** DynamicsProcessing chỉ bật Limiter (ổn định, không lỗi API). */
-    @RequiresApi(28)
-    private fun enableDP() {
+    private fun disableLoudnessEnhancer() {
         runCatching {
-            if (dp == null) {
-                val cfg = DynamicsProcessing.Config.Builder(
+            loudnessEnhancer?.enabled = false
+            loudnessEnhancer?.release()
+            loudnessEnhancer = null
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.P)
+    private fun enableDynamicsProcessing() {
+        runCatching {
+            if (dynamicsProcessor == null) {
+                val config = DynamicsProcessing.Config.Builder(
                     DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
-                    1, // 1 channel
-                    false, 0, // preEq off
-                    false, 0, // mbc off
-                    false, 0, // postEq off
-                    true      // limiter on
+                    1,     // channels
+                    false, 0, // preEq
+                    false, 0, // mbc
+                    false, 0, // postEq
+                    true      // limiter
                 ).build()
-                dp = DynamicsProcessing(0, 0, cfg)
+
+                dynamicsProcessor = DynamicsProcessing(0, 0, config)
             }
 
-            // Bật DynamicsProcessing tổng
-            dp?.setEnabled(true)
+            dynamicsProcessor?.apply {
+                setEnabled(true)
 
-            // Lấy channel 0 để cấu hình limiter
-            val ch = dp!!.getChannelByChannelIndex(0)
-            val lim = ch.limiter
+                val channel = getChannelByChannelIndex(0)
+                val limiter = channel.limiter
 
-            // Bật limiter và cấu hình
-            lim.setEnabled(true)
-            lim.attackTime = 1f
-            lim.releaseTime = 50f
-            lim.ratio = 10f
-            lim.threshold = -1f
+                limiter.apply {
+                    setEnabled(true)
+                    attackTime = 1f
+                    releaseTime = 50f
+                    ratio = 10f
+                    threshold = -1f
+                }
 
-            // Ghi lại limiter vào channel và apply
-            ch.limiter = lim
-            dp!!.setChannelTo(0, ch)
+                channel.limiter = limiter
+                setChannelTo(0, channel)
+            }
 
-            Log.d(TAG, "DynamicsProcessing limiter ON")
-        }.onFailure {
-            Log.w(TAG, "DP enable failed: ${it.message}")
+            Log.d(TAG, "DynamicsProcessing limiter enabled")
+        }.onFailure { e ->
+            Log.w(TAG, "Failed to enable DynamicsProcessing", e)
         }
     }
 
-    @RequiresApi(28)
-    private fun updateDynamicsProcessingGain() {
-        // Có thể map boostDb → threshold nếu muốn
-    }
-
-    @RequiresApi(28)
-    private fun disableDP() {
+    @RequiresApi(Build.VERSION_CODES.P)
+    private fun disableDynamicsProcessing() {
         runCatching {
-            dp?.setEnabled(false)
-            dp?.release()
-        }
-        dp = null
-    }
-
-
-    // ---------------- Volume ----------------
-
-    private fun setStreamsToMax(vararg streams: Int) {
-        streams.forEach { s ->
-            val max = am.getStreamMaxVolume(s)
-            if (am.getStreamVolume(s) != max) am.setStreamVolume(s, max, 0)
+            dynamicsProcessor?.setEnabled(false)
+            dynamicsProcessor?.release()
+            dynamicsProcessor = null
         }
     }
 
-    private fun maybeRestoreMax(tag: String) {
-        if (am.mode == SystemAudioManager.MODE_IN_COMMUNICATION)
-            setStreamsToMax(SystemAudioManager.STREAM_VOICE_CALL, SystemAudioManager.STREAM_MUSIC)
-        else setStreamsToMax(SystemAudioManager.STREAM_MUSIC)
-        logVol("restore@$tag")
+    @RequiresApi(Build.VERSION_CODES.P)
+    private fun updateDynamicsProcessingGain() {
+        // Future: Map currentBoostDb to limiter threshold if needed
     }
 
-    private fun logVol(phase: String) {
-        val v = am.getStreamVolume(SystemAudioManager.STREAM_VOICE_CALL)
-        val mv = am.getStreamMaxVolume(SystemAudioManager.STREAM_VOICE_CALL)
-        val m = am.getStreamVolume(SystemAudioManager.STREAM_MUSIC)
-        val mm = am.getStreamMaxVolume(SystemAudioManager.STREAM_MUSIC)
-        Log.d(TAG, "$phase: mode=${am.mode}, voice=$v/$mv, music=$m/$mm, preferSpeaker=$_preferSpeakerCache")
+    // Volume management
+
+    private fun setStreamsToMaxVolume(vararg streams: Int) {
+        streams.forEach { stream ->
+            val maxVolume = audioManager.getStreamMaxVolume(stream)
+            val currentVolume = audioManager.getStreamVolume(stream)
+
+            if (currentVolume != maxVolume) {
+                audioManager.setStreamVolume(stream, maxVolume, 0)
+                Log.d(TAG, "Set stream $stream to max volume: $maxVolume")
+            }
+        }
     }
 
-    private fun typeName(t: Int) = when (t) {
+    private fun restoreMaxVolume(tag: String) {
+        if (audioManager.mode == SystemAudioManager.MODE_IN_COMMUNICATION) {
+            setStreamsToMaxVolume(SystemAudioManager.STREAM_VOICE_CALL, SystemAudioManager.STREAM_MUSIC)
+        } else {
+            setStreamsToMaxVolume(SystemAudioManager.STREAM_MUSIC)
+        }
+        logVolumeState("restore@$tag")
+    }
+
+    // Utilities
+
+    private fun logVolumeState(phase: String) {
+        val voiceVol = audioManager.getStreamVolume(SystemAudioManager.STREAM_VOICE_CALL)
+        val voiceMax = audioManager.getStreamMaxVolume(SystemAudioManager.STREAM_VOICE_CALL)
+        val musicVol = audioManager.getStreamVolume(SystemAudioManager.STREAM_MUSIC)
+        val musicMax = audioManager.getStreamMaxVolume(SystemAudioManager.STREAM_MUSIC)
+
+        Log.d(TAG, "$phase: mode=${audioManager.mode}, voice=$voiceVol/$voiceMax, " +
+                "music=$musicVol/$musicMax, preferSpeaker=$preferSpeaker")
+    }
+
+    private fun getDeviceTypeName(type: Int): String = when (type) {
         AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "BT_A2DP"
         AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "BT_SCO"
         AudioDeviceInfo.TYPE_USB_HEADSET -> "USB_HEADSET"
         AudioDeviceInfo.TYPE_WIRED_HEADSET -> "WIRED_HEADSET"
         AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "SPEAKER"
-        else -> "T$t"
+        else -> "TYPE_$type"
+    }
+
+    companion object {
+        private const val TAG = "AudioSessionManager"
+        private const val MIN_BOOST_DB = 0
+        private const val MAX_BOOST_DB = 24
+        private const val DEFAULT_BOOST_DB = 18
     }
 }

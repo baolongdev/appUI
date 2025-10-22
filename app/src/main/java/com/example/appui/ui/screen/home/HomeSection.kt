@@ -1,9 +1,9 @@
 package com.example.appui.ui.screen.home
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.ui.graphics.vector.ImageVector
 
 /**
@@ -14,5 +14,6 @@ enum class HomeSection(
     val icon: ImageVector
 ) {
     HOME("Home", Icons.Filled.Home),
-    MY_AGENTS("My Agents", Icons.Filled.People),
+    MY_AGENTS("My Agents", Icons.Filled.Psychology),
+    HISTORY("History", Icons.Filled.History)
 }

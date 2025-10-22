@@ -3,8 +3,8 @@ package com.example.appui.di
 import android.content.Context
 import android.util.Log
 import com.example.appui.BuildConfig
-import com.example.appui.core.ai.cloud.elevenlabs.ElevenLabsConfig
-import com.example.appui.core.ai.cloud.elevenlabs.ElevenLabsSessionManager
+import com.example.appui.core.ai.elevenlabs.config.ElevenLabsConfig
+import com.example.appui.core.ai.elevenlabs.session.ElevenLabsSessionManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn

@@ -1,4 +1,3 @@
-// ui/screen/update/UpdateUiState.kt
 package com.example.appui.ui.screen.update
 
 import com.example.appui.domain.model.AppRelease
@@ -14,5 +13,8 @@ data class UpdateUiState(
     val isLoadingReleases: Boolean = false,
     val downloadProgress: DownloadProgress = DownloadProgress.Idle,
     val error: String? = null,
-    val updateAvailable: Boolean = false
+    val updateAvailable: Boolean = false,
+    val isDownloading: Boolean = false,
+    val currentDownloadUrl: String? = null,
+    val isDismissed: Boolean = false
 )

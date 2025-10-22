@@ -21,7 +21,6 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
       
-      # ✅ CRITICAL FIX: Manually switch to main branch
       - name: Switch to main branch
         run: |
           git fetch origin main
@@ -44,6 +43,17 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
       
+      # ✅ Thêm step tạo local.properties
+      - name: Create local.properties
+        run: |
+          echo "github.token=${{ secrets.GITHUB_TOKEN }}" > local.properties
+          echo "XI_BASE_URL=${{ secrets.XI_BASE_URL }}" >> local.properties
+          echo "XI_API_KEY=${{ secrets.XI_API_KEY }}" >> local.properties
+          echo "XI_AGENT_ID=${{ secrets.XI_AGENT_ID }}" >> local.properties
+          echo "GITHUB_OWNER=baolongdev" >> local.properties
+          echo "GITHUB_REPO=appUI" >> local.properties
+          echo "UPDATE_JSON_URL=https://raw.githubusercontent.com/baolongdev/appUI/main/update.json" >> local.properties
+      
       - name: Decode keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -56,6 +66,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          # ✅ Environment variables cho BuildConfig
           XI_BASE_URL: ${{ secrets.XI_BASE_URL }}
           XI_API_KEY: ${{ secrets.XI_API_KEY }}
           XI_AGENT_ID: ${{ secrets.XI_AGENT_ID }}
@@ -84,7 +95,6 @@ jobs:
       
       - name: Update update.json and push
         run: |
-          # Verify we're on main branch
           CURRENT_BRANCH=$(git branch --show-current)
           echo "Current branch: $CURRENT_BRANCH"
           
@@ -93,7 +103,6 @@ jobs:
             exit 1
           fi
           
-          # Generate update.json
           RELEASE_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           
           cat > update.json << EOF
@@ -107,15 +116,12 @@ jobs:
           }
           EOF
           
-          # Display for verification
           echo "Generated update.json:"
           cat update.json
           
-          # Configure git
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           
-          # Commit and push
           git add update.json
           if ! git diff --staged --quiet; then
             git commit -m "chore: update to version ${{ steps.version.outputs.version }}"

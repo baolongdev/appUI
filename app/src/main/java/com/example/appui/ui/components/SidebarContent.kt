@@ -1,8 +1,10 @@
 package com.example.appui.ui.screen.home.components
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -26,20 +28,17 @@ import com.example.appui.ui.screen.home.HomeSection
 import com.example.appui.ui.theme.ComponentSize
 import com.example.appui.ui.theme.Spacing
 
-/**
- * Sidebar content với smooth animations và update badge
- */
 @Composable
 fun ColumnScope.SidebarContent(
     currentSection: HomeSection,
+    currentVersion: String,
     onSectionSelected: (HomeSection) -> Unit,
     onToggleSidebar: () -> Unit,
     onSettings: () -> Unit,
     onLogout: () -> Unit,
     isCollapsed: Boolean = false,
-    hasUpdate: Boolean = false // ✅ Add hasUpdate parameter
+    hasUpdate: Boolean = false
 ) {
-    // Header
     SidebarHeaderWithToggle(
         isCollapsed = isCollapsed,
         onToggle = onToggleSidebar
@@ -49,14 +48,12 @@ fun ColumnScope.SidebarContent(
     SidebarDivider()
     Spacer(Modifier.height(Spacing.Small))
 
-    // Navigation section
     Column(
         modifier = Modifier
             .weight(1f)
             .fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(Spacing.ExtraSmall)
     ) {
-        // Section title với smooth height transition
         val titleAlpha by animateFloatAsState(
             targetValue = if (isCollapsed) 0f else 1f,
             animationSpec = tween(250, easing = FastOutSlowInEasing),
@@ -79,7 +76,7 @@ fun ColumnScope.SidebarContent(
         ) {
             if (titleAlpha > 0f) {
                 Text(
-                    text = "Điều hướng",
+                    text = "Navigation",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -90,7 +87,6 @@ fun ColumnScope.SidebarContent(
             }
         }
 
-        // Navigation items
         HomeSection.entries.forEach { section ->
             SidebarNavigationItem(
                 section = section,
@@ -105,18 +101,15 @@ fun ColumnScope.SidebarContent(
     SidebarDivider()
     Spacer(Modifier.height(Spacing.Medium))
 
-    // Footer
     SidebarFooterContent(
+        currentVersion = currentVersion,
         onSettings = onSettings,
         onLogout = onLogout,
         isCollapsed = isCollapsed,
-        hasUpdate = hasUpdate // ✅ Pass to footer
+        hasUpdate = hasUpdate
     )
 }
 
-/**
- * Header with logo and toggle
- */
 @Composable
 private fun SidebarHeaderWithToggle(
     isCollapsed: Boolean,
@@ -145,15 +138,14 @@ private fun SidebarHeaderWithToggle(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(Spacing.Small)
     ) {
-        // Logo
         Surface(
             modifier = Modifier.size(logoSize),
             shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+            color = MaterialTheme.colorScheme.surfaceVariant,
             tonalElevation = 0.dp
         ) {
             Image(
-                painter = painterResource(id = R.drawable.ic_launcher_background),
+                painter = painterResource(id = R.drawable.ic_launcher_foreground),
                 contentDescription = "App Logo",
                 modifier = Modifier
                     .fillMaxSize()
@@ -161,7 +153,6 @@ private fun SidebarHeaderWithToggle(
             )
         }
 
-        // Toggle button
         IconButton(
             onClick = onToggle,
             modifier = Modifier.size(32.dp)
@@ -176,9 +167,6 @@ private fun SidebarHeaderWithToggle(
     }
 }
 
-/**
- * Navigation item
- */
 @Composable
 private fun SidebarNavigationItem(
     section: HomeSection,
@@ -186,11 +174,25 @@ private fun SidebarNavigationItem(
     onClick: () -> Unit,
     isCollapsed: Boolean
 ) {
-    val backgroundColor = if (selected) {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-    } else {
-        Color.Transparent
-    }
+    val backgroundColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.surfaceVariant
+        } else {
+            Color.Transparent
+        },
+        animationSpec = tween(200, easing = FastOutSlowInEasing),
+        label = "nav-bg-${section.name}"
+    )
+
+    val borderColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.onSurface
+        } else {
+            Color.Transparent
+        },
+        animationSpec = tween(200, easing = FastOutSlowInEasing),
+        label = "nav-border-${section.name}"
+    )
 
     val textAlpha by animateFloatAsState(
         targetValue = if (isCollapsed) 0f else 1f,
@@ -203,7 +205,12 @@ private fun SidebarNavigationItem(
             .fillMaxWidth()
             .height(ComponentSize.ButtonHeight)
             .clip(MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .border(
+                width = if (selected) 1.dp else 0.dp,
+                color = borderColor,
+                shape = MaterialTheme.shapes.medium
+            ),
         color = backgroundColor,
         shape = MaterialTheme.shapes.medium
     ) {
@@ -231,7 +238,7 @@ private fun SidebarNavigationItem(
                         text = section.displayName,
                         color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                         maxLines = 1,
                         modifier = Modifier.alpha(textAlpha)
                     )
@@ -241,9 +248,6 @@ private fun SidebarNavigationItem(
     }
 }
 
-/**
- * Sidebar divider
- */
 @Composable
 private fun SidebarDivider() {
     HorizontalDivider(
@@ -255,11 +259,9 @@ private fun SidebarDivider() {
     )
 }
 
-/**
- * Footer content with Settings and Logout
- */
 @Composable
 private fun SidebarFooterContent(
+    currentVersion: String,
     onSettings: () -> Unit,
     onLogout: () -> Unit,
     isCollapsed: Boolean,
@@ -271,9 +273,8 @@ private fun SidebarFooterContent(
             .fillMaxWidth()
             .padding(horizontal = Spacing.ExtraSmall)
     ) {
-        // Settings button with update badge
         SidebarFooterItem(
-            text = "Cài đặt",
+            text = "Settings",
             icon = Icons.Default.Settings,
             onClick = onSettings,
             isDestructive = false,
@@ -281,21 +282,27 @@ private fun SidebarFooterContent(
             showBadge = hasUpdate
         )
 
-        // Logout button
         SidebarFooterItem(
-            text = "Đăng xuất",
+            text = "Logout",
             icon = Icons.Default.Logout,
             onClick = onLogout,
             isDestructive = true,
             isCollapsed = isCollapsed,
             showBadge = false
         )
+
+        if (!isCollapsed && currentVersion.isNotBlank()) {
+            Spacer(Modifier.height(Spacing.Small))
+            Text(
+                text = "v$currentVersion",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.padding(start = Spacing.Small)
+            )
+        }
     }
 }
 
-/**
- * Footer item with optional badge
- */
 @Composable
 private fun SidebarFooterItem(
     text: String,
@@ -330,7 +337,6 @@ private fun SidebarFooterItem(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Start
             ) {
-                // Icon with badge
                 Box {
                     Icon(
                         imageVector = icon,
@@ -343,14 +349,13 @@ private fun SidebarFooterItem(
                         modifier = Modifier.size(ComponentSize.IconMedium)
                     )
 
-                    // Red dot badge (top-right corner)
                     if (showBadge) {
                         Box(
                             modifier = Modifier
                                 .offset(x = 2.dp, y = (-2).dp)
                                 .size(8.dp)
                                 .clip(CircleShape)
-                                .background(Color.Red)
+                                .background(MaterialTheme.colorScheme.error)
                                 .align(Alignment.TopEnd)
                         )
                     }
@@ -366,7 +371,7 @@ private fun SidebarFooterItem(
                         } else {
                             MaterialTheme.colorScheme.onSurface
                         },
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Medium,
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
                         modifier = Modifier.alpha(textAlpha)

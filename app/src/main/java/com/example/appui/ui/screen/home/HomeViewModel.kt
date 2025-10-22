@@ -2,6 +2,8 @@ package com.example.appui.ui.screen.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.appui.BuildConfig
+import com.example.appui.data.datastore.UpdatePreferences
 import com.example.appui.domain.usecase.CheckAppUpdateUseCase
 import com.example.appui.utils.Either
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -14,14 +16,15 @@ import javax.inject.Inject
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
-    private val checkAppUpdateUseCase: CheckAppUpdateUseCase // ✅ Inject use case
+    private val checkAppUpdateUseCase: CheckAppUpdateUseCase,
+    private val updatePreferences: UpdatePreferences
 ) : ViewModel() {
 
     private val _ui = MutableStateFlow(HomeUiState())
     val ui: StateFlow<HomeUiState> = _ui.asStateFlow()
 
     init {
-        // ✅ Check for updates on startup
+        loadCurrentVersion()
         checkForUpdates()
     }
 
@@ -33,21 +36,28 @@ class HomeViewModel @Inject constructor(
         _ui.update { it.copy(sidebarOpen = !it.sidebarOpen) }
     }
 
-    // ✅ Check for updates
+    private fun loadCurrentVersion() {
+        _ui.update { it.copy(currentVersion = BuildConfig.VERSION_NAME) }
+    }
+
     private fun checkForUpdates() {
         viewModelScope.launch {
+            val isScreenVisited = updatePreferences.isUpdateScreenVisited()
+            if (isScreenVisited) return@launch
+
             when (val result = checkAppUpdateUseCase()) {
-                is Either.Left -> {
-                    // Ignore error silently
-                }
+                is Either.Left -> {}
                 is Either.Right -> {
                     val updateInfo = result.value
                     if (updateInfo.isNewer) {
-                        _ui.update {
-                            it.copy(
-                                hasUpdate = true,
-                                updateVersion = updateInfo.version
-                            )
+                        val isSnoozed = updatePreferences.isUpdateSnoozed(updateInfo.version)
+                        if (!isSnoozed) {
+                            _ui.update {
+                                it.copy(
+                                    hasUpdate = true,
+                                    updateVersion = updateInfo.version
+                                )
+                            }
                         }
                     }
                 }
@@ -55,12 +65,10 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    // ✅ Dismiss update notification
     fun dismissUpdateNotification() {
         _ui.update { it.copy(showUpdateDialog = false) }
     }
 
-    // ✅ Show update dialog
     fun showUpdateDialog() {
         _ui.update { it.copy(showUpdateDialog = true) }
     }

@@ -1,4 +1,3 @@
-// domain/repository/AppUpdateRepository.kt
 package com.example.appui.domain.repository
 
 import com.example.appui.domain.model.AppRelease
@@ -15,7 +14,7 @@ interface AppUpdateRepository {
 
 sealed class DownloadProgress {
     data object Idle : DownloadProgress()
-    data class Downloading(val progress: Float, val downloadedBytes: Long, val totalBytes: Long) : DownloadProgress()
+    data class Downloading(val progress: Float) : DownloadProgress()  // ✅ SIMPLIFIED
     data class Completed(val filePath: String) : DownloadProgress()
     data class Failed(val error: String) : DownloadProgress()
 }

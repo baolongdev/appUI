@@ -1,7 +1,8 @@
 package com.example.appui.ui.screen.agents
 
-import com.example.appui.data.remote.elevenlabs.AgentSummaryResponseModel
-import com.example.appui.data.remote.elevenlabs.GetAgentResponseModel
+import com.example.appui.data.remote.elevenlabs.models.AgentSummaryResponseModel
+import com.example.appui.data.remote.elevenlabs.models.GetAgentResponseModel
+
 
 data class AgentsUiState(
     val isLoading: Boolean = false,

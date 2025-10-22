@@ -1,15 +1,18 @@
-// data/repository/AppUpdateRepositoryImpl.kt
 package com.example.appui.data.repository
 
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.core.content.FileProvider
 import com.example.appui.BuildConfig
+import com.example.appui.core.notification.DownloadNotificationManager
+import com.example.appui.core.update.DownloadProgressMapper
+import com.example.appui.data.mapper.GitHubMapper
 import com.example.appui.data.remote.github.GitHubApiService
+import com.example.appui.di.UpdateClient
 import com.example.appui.domain.model.AppRelease
-import com.example.appui.domain.model.ReleaseAsset
 import com.example.appui.domain.model.UpdateInfo
 import com.example.appui.domain.repository.AppUpdateRepository
 import com.example.appui.domain.repository.DownloadProgress
@@ -19,20 +22,305 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
+import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
-import java.time.Instant
+import java.io.FileOutputStream
 import javax.inject.Inject
 
 class AppUpdateRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val apiService: GitHubApiService,
-    private val httpClient: OkHttpClient
+    @UpdateClient private val okHttpClient: OkHttpClient,
+    private val notificationManager: DownloadNotificationManager,
+    private val gitHubApiService: GitHubApiService
 ) : AppUpdateRepository {
 
-    private val currentVersionCode: Int by lazy {
+    companion object {
+        private const val GITHUB_OWNER = "baolongdev"
+        private const val GITHUB_REPO = "appUI"
+    }
+
+    // ✅ NEW: Store current download call for cancellation
+    @Volatile
+    private var currentDownloadCall: Call? = null
+
+    override suspend fun checkForUpdate(): Either<String, UpdateInfo> {
+        return try {
+            val currentVersionCode = getCurrentVersionCode()
+
+            val token = if (BuildConfig.GITHUB_TOKEN.isNotBlank()) {
+                "Bearer ${BuildConfig.GITHUB_TOKEN}"
+            } else null
+
+            val response = withContext(Dispatchers.IO) {
+                gitHubApiService.getLatestRelease(GITHUB_OWNER, GITHUB_REPO, token)
+            }
+
+            when {
+                response.isSuccessful -> {
+                    val releaseDto = response.body()
+                    if (releaseDto != null) {
+                        val updateInfo = GitHubMapper.toUpdateInfo(releaseDto, currentVersionCode)
+                        Either.Right(updateInfo)
+                    } else {
+                        Either.Left("Không có dữ liệu từ GitHub")
+                    }
+                }
+                response.code() == 403 -> {
+                    Either.Left("Đã vượt giới hạn API GitHub. Vui lòng thử lại sau 1 giờ.")
+                }
+                else -> {
+                    Either.Left("Lỗi kiểm tra cập nhật: ${response.code()}")
+                }
+            }
+        } catch (e: Exception) {
+            val errorMsg = when (e) {
+                is java.net.UnknownHostException -> "Không có kết nối internet"
+                is java.net.SocketTimeoutException -> "Kết nối quá chậm, vui lòng thử lại"
+                else -> "Lỗi: ${e.localizedMessage ?: "Không xác định"}"
+            }
+            Either.Left(errorMsg)
+        }
+    }
+
+    override suspend fun getAllReleases(): Either<String, List<AppRelease>> {
+        return try {
+            val token = if (BuildConfig.GITHUB_TOKEN.isNotBlank()) {
+                "Bearer ${BuildConfig.GITHUB_TOKEN}"
+            } else null
+
+            val response = withContext(Dispatchers.IO) {
+                gitHubApiService.getReleases(GITHUB_OWNER, GITHUB_REPO, token)
+            }
+
+            when {
+                response.isSuccessful -> {
+                    val releasesDto = response.body()
+                    if (releasesDto != null) {
+                        val releases = releasesDto
+                            .filter { !it.draft }
+                            .map { GitHubMapper.toAppRelease(it) }
+                        Either.Right(releases)
+                    } else {
+                        Either.Left("Không có dữ liệu từ GitHub")
+                    }
+                }
+                response.code() == 403 -> {
+                    Either.Left("Đã vượt giới hạn API GitHub. Vui lòng thử lại sau 1 giờ.")
+                }
+                else -> {
+                    Either.Left("Lỗi tải danh sách: ${response.code()}")
+                }
+            }
+        } catch (e: Exception) {
+            val errorMsg = when (e) {
+                is java.net.UnknownHostException -> "Không có kết nối internet"
+                is java.net.SocketTimeoutException -> "Kết nối quá chậm, vui lòng thử lại"
+                else -> "Lỗi: ${e.localizedMessage ?: "Không xác định"}"
+            }
+            Either.Left(errorMsg)
+        }
+    }
+
+    override suspend fun downloadUpdate(url: String): Flow<DownloadProgress> = flow {
+        emit(DownloadProgress.Downloading(0f))
+
         try {
+            val request = Request.Builder().url(url).build()
+
+            // ✅ Store call reference for cancellation
+            val call = okHttpClient.newCall(request)
+            currentDownloadCall = call
+
+            val response = call.execute()
+
+            // ✅ Check if cancelled
+            if (!response.isSuccessful) {
+                currentDownloadCall = null
+
+                if (call.isCanceled()) {
+                    notificationManager.cancelNotification()
+                    emit(DownloadProgress.Failed("Đã hủy tải xuống"))
+                    return@flow
+                }
+
+                val errorMsg = "Lỗi tải xuống: ${response.code}"
+                notificationManager.showDownloadError(errorMsg)
+                emit(DownloadProgress.Failed(errorMsg))
+                return@flow
+            }
+
+            val body = response.body ?: run {
+                currentDownloadCall = null
+                val errorMsg = "Không có dữ liệu"
+                notificationManager.showDownloadError(errorMsg)
+                emit(DownloadProgress.Failed(errorMsg))
+                return@flow
+            }
+
+            val contentLength = body.contentLength()
+            if (contentLength <= 0) {
+                currentDownloadCall = null
+                val errorMsg = "Không xác định được kích thước file"
+                notificationManager.showDownloadError(errorMsg)
+                emit(DownloadProgress.Failed(errorMsg))
+                return@flow
+            }
+
+            val apkFile = File(context.cacheDir, "updates/update.apk")
+
+            apkFile.parentFile?.mkdirs()
+
+            if (apkFile.exists()) {
+                apkFile.delete()
+            }
+
+            notificationManager.showDownloadProgress(0, 0L, contentLength)
+
+            body.byteStream().use { input ->
+                FileOutputStream(apkFile).use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    var bytesRead: Int
+                    var totalBytesRead = 0L
+                    var lastProgress = 0
+                    var lastNotificationTime = System.currentTimeMillis()
+                    var lastEmitTime = System.currentTimeMillis()
+
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        // ✅ Check if cancelled during download
+                        if (call.isCanceled()) {
+                            apkFile.delete()
+                            currentDownloadCall = null
+                            notificationManager.cancelNotification()
+                            emit(DownloadProgress.Failed("Đã hủy tải xuống"))
+                            return@flow
+                        }
+
+                        output.write(buffer, 0, bytesRead)
+                        totalBytesRead += bytesRead
+
+                        val progress = DownloadProgressMapper.calculateProgress(
+                            totalBytesRead,
+                            contentLength
+                        )
+                        val progressFloat = totalBytesRead.toFloat() / contentLength
+                        val currentTime = System.currentTimeMillis()
+
+                        val timeSinceLastEmit = currentTime - lastEmitTime
+                        val progressDiff = progress - lastProgress
+
+                        if (timeSinceLastEmit >= 200 || progressDiff >= 2) {
+                            lastEmitTime = currentTime
+                            lastProgress = progress
+                            emit(DownloadProgress.Downloading(progressFloat))
+                        }
+
+                        if (progress % 5 == 0 || (currentTime - lastNotificationTime) >= 500) {
+                            lastNotificationTime = currentTime
+                            notificationManager.showDownloadProgress(
+                                progress,
+                                totalBytesRead,
+                                contentLength
+                            )
+                        }
+                    }
+                }
+            }
+
+            currentDownloadCall = null
+
+            if (apkFile.length() != contentLength) {
+                apkFile.delete()
+                val errorMsg = "File tải xuống không hoàn chỉnh"
+                notificationManager.showDownloadError(errorMsg)
+                emit(DownloadProgress.Failed(errorMsg))
+                return@flow
+            }
+
+            notificationManager.showDownloadComplete(contentLength)
+            emit(DownloadProgress.Completed(apkFile.absolutePath))
+
+        } catch (e: Exception) {
+            currentDownloadCall = null
+
+            // ✅ Better error handling
+            val errorMsg = when {
+                e is java.io.IOException && e.message?.contains("Canceled") == true -> {
+                    notificationManager.cancelNotification()
+                    "Đã hủy tải xuống"
+                }
+                e is java.net.UnknownHostException -> "Không có kết nối mạng"
+                e is java.net.SocketTimeoutException -> "Quá thời gian chờ"
+                e is java.io.IOException -> "Lỗi đọc/ghi dữ liệu"
+                else -> "Lỗi: ${e.localizedMessage ?: "Không xác định"}"
+            }
+
+            if (!errorMsg.contains("Đã hủy")) {
+                notificationManager.showDownloadError(errorMsg)
+            }
+
+            emit(DownloadProgress.Failed(errorMsg))
+        }
+    }.flowOn(Dispatchers.IO)
+
+    /**
+     * ✅ NEW: Cancel current download
+     */
+    fun cancelDownload() {
+        currentDownloadCall?.cancel()
+        currentDownloadCall = null
+    }
+
+    override suspend fun installUpdate(apkPath: String): Either<String, Unit> {
+        return try {
+            val apkFile = File(apkPath)
+
+            if (!apkFile.exists()) {
+                return Either.Left("File không tồn tại")
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (!context.packageManager.canRequestPackageInstalls()) {
+                    return Either.Left("Vui lòng cho phép cài đặt từ nguồn không xác định")
+                }
+            }
+
+            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                val apkUri = FileProvider.getUriForFile(
+                    context,
+                    "${BuildConfig.APPLICATION_ID}.fileprovider",
+                    apkFile
+                )
+
+                Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(apkUri, "application/vnd.android.package-archive")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            } else {
+                val apkUri = Uri.fromFile(apkFile)
+                Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(apkUri, "application/vnd.android.package-archive")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+            }
+
+            context.startActivity(intent)
+
+            kotlinx.coroutines.delay(2000)
+            notificationManager.cancelNotification()
+
+            Either.Right(Unit)
+
+        } catch (e: Exception) {
+            Either.Left("Lỗi cài đặt: ${e.localizedMessage ?: "Không xác định"}")
+        }
+    }
+
+    private fun getCurrentVersionCode(): Int {
+        return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 context.packageManager.getPackageInfo(
                     context.packageName,
@@ -44,141 +332,6 @@ class AppUpdateRepositoryImpl @Inject constructor(
             }
         } catch (e: Exception) {
             BuildConfig.VERSION_CODE
-        }
-    }
-
-    override suspend fun checkForUpdate(): Either<String, UpdateInfo> {
-        return try {
-            val response = apiService.getUpdateJson(BuildConfig.UPDATE_JSON_URL)
-
-            if (response.isSuccessful && response.body() != null) {
-                val dto = response.body()!!
-                val updateInfo = UpdateInfo(
-                    version = dto.latestVersion,
-                    versionCode = dto.latestVersionCode,
-                    downloadUrl = dto.downloadUrl,
-                    releaseNotes = dto.releaseNotes,
-                    releasedAt = Instant.parse(dto.releasedAt),
-                    mandatory = dto.mandatory,
-                    isNewer = dto.latestVersionCode > currentVersionCode
-                )
-                Either.Right(updateInfo)
-            } else {
-                Either.Left("Failed to check for updates: ${response.code()}")
-            }
-        } catch (e: Exception) {
-            Either.Left("Error checking for updates: ${e.message}")
-        }
-    }
-
-    override suspend fun getAllReleases(): Either<String, List<AppRelease>> {
-        return try {
-            val response = apiService.getReleases(
-                owner = BuildConfig.GITHUB_OWNER,
-                repo = BuildConfig.GITHUB_REPO
-            )
-
-            if (response.isSuccessful && response.body() != null) {
-                val releases = response.body()!!
-                    .filter { !it.prerelease } // Chỉ lấy stable releases
-                    .map { dto ->
-                        AppRelease(
-                            tagName = dto.tagName,
-                            name = dto.name ?: dto.tagName,
-                            body = dto.body ?: "",
-                            publishedAt = dto.publishedAt,
-                            assets = dto.assets.map { asset ->
-                                ReleaseAsset(
-                                    name = asset.name,
-                                    downloadUrl = asset.browserDownloadUrl,
-                                    size = asset.size,
-                                    contentType = asset.contentType
-                                )
-                            }
-                        )
-                    }
-                Either.Right(releases)
-            } else {
-                Either.Left("Failed to fetch releases: ${response.code()}")
-            }
-        } catch (e: Exception) {
-            Either.Left("Error fetching releases: ${e.message}")
-        }
-    }
-
-    override suspend fun downloadUpdate(url: String): Flow<DownloadProgress> = flow {
-        emit(DownloadProgress.Idle)
-
-        try {
-            val request = Request.Builder().url(url).build()
-            val response = httpClient.newCall(request).execute()
-
-            if (!response.isSuccessful) {
-                emit(DownloadProgress.Failed("Download failed: ${response.code}"))
-                return@flow
-            }
-
-            val body = response.body ?: run {
-                emit(DownloadProgress.Failed("Empty response body"))
-                return@flow
-            }
-
-            val totalBytes = body.contentLength()
-            val downloadDir = File(context.cacheDir, "updates")
-            downloadDir.mkdirs()
-
-            val apkFile = File(downloadDir, "app-update.apk")
-            val inputStream = body.byteStream()
-            val outputStream = apkFile.outputStream()
-
-            var downloadedBytes = 0L
-            val buffer = ByteArray(8192)
-            var bytesRead: Int
-
-            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                outputStream.write(buffer, 0, bytesRead)
-                downloadedBytes += bytesRead
-
-                val progress = if (totalBytes > 0) {
-                    downloadedBytes.toFloat() / totalBytes.toFloat()
-                } else 0f
-
-                emit(DownloadProgress.Downloading(progress, downloadedBytes, totalBytes))
-            }
-
-            outputStream.close()
-            inputStream.close()
-
-            emit(DownloadProgress.Completed(apkFile.absolutePath))
-
-        } catch (e: Exception) {
-            emit(DownloadProgress.Failed("Download error: ${e.message}"))
-        }
-    }.flowOn(Dispatchers.IO)
-
-    override suspend fun installUpdate(apkPath: String): Either<String, Unit> {
-        return try {
-            val apkFile = File(apkPath)
-            if (!apkFile.exists()) {
-                return Either.Left("APK file not found")
-            }
-
-            val apkUri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                apkFile
-            )
-
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(apkUri, "application/vnd.android.package-archive")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
-            }
-
-            context.startActivity(intent)
-            Either.Right(Unit)
-
-        } catch (e: Exception) {
-            Either.Left("Installation error: ${e.message}")
         }
     }
 }
