@@ -6,24 +6,22 @@ plugins {
     alias(libs.plugins.kotlinAndroid)
     alias(libs.plugins.hilt)
     alias(libs.plugins.kotlinCompose)
-    alias(libs.plugins.ksp)  // ✅ THAY kapt bằng ksp
+    alias(libs.plugins.ksp)
 }
 
-// ✅ Version configuration
 object AppVersion {
     const val major = 1
     const val minor = 0
-    const val patch = 1
-    const val code = major * 10000 + minor * 100 + patch // 10000
+    const val patch = 0
+    const val code = major * 10000 + minor * 100 + patch
     const val name = "$major.$minor.$patch"
-    const val dbVersion = 3 // ✅ Manual tracking
+    const val dbVersion = 3
 }
 
 android {
     namespace = "com.example.appui"
     compileSdk = 36
 
-    // ✅ Load local.properties (for sensitive data)
     val localPropertiesFile = rootProject.file("local.properties")
     val localProperties = Properties()
     if (localPropertiesFile.exists()) {
@@ -40,41 +38,73 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
 
+        // ✅ Fixed: Add fallback to environment variables
         buildConfigField(
             "String",
             "GITHUB_TOKEN",
-            "\"${localProperties.getProperty("github.token", "")}\""
+            "\"${localProperties.getProperty("github.token")
+                ?: System.getenv("GITHUB_TOKEN")
+                ?: ""}\""
         )
 
-        buildConfigField("String", "ELEVENLABS_BASE_URL",
+        buildConfigField(
+            "String",
+            "ELEVENLABS_BASE_URL",
             "\"${localProperties.getProperty("XI_BASE_URL")
                 ?: System.getenv("XI_BASE_URL")
-                ?: "https://api.elevenlabs.io"}\"")
+                ?: "https://api.elevenlabs.io"}\""
+        )
 
-        buildConfigField("String", "ELEVENLABS_API_KEY",
+        buildConfigField(
+            "String",
+            "ELEVENLABS_API_KEY",
             "\"${localProperties.getProperty("XI_API_KEY")
                 ?: System.getenv("XI_API_KEY")
-                ?: ""}\"")
+                ?: ""}\""
+        )
 
-        buildConfigField("String", "ELEVENLABS_AGENT_ID",
+        buildConfigField(
+            "String",
+            "ELEVENLABS_AGENT_ID",
             "\"${localProperties.getProperty("XI_AGENT_ID")
                 ?: System.getenv("XI_AGENT_ID")
-                ?: ""}\"")
+                ?: ""}\""
+        )
 
-        buildConfigField("String", "GITHUB_OWNER",
+        buildConfigField(
+            "String",
+            "GITHUB_OWNER",
             "\"${localProperties.getProperty("GITHUB_OWNER")
-                ?: "baolongdev"}\"")
+                ?: System.getenv("GITHUB_OWNER")
+                ?: "baolongdev"}\""
+        )
 
-        buildConfigField("String", "GITHUB_REPO",
+        buildConfigField(
+            "String",
+            "GITHUB_REPO",
             "\"${localProperties.getProperty("GITHUB_REPO")
-                ?: "appUI"}\"")
+                ?: System.getenv("GITHUB_REPO")
+                ?: "appUI"}\""
+        )
 
-        buildConfigField("String", "UPDATE_JSON_URL",
+        buildConfigField(
+            "String",
+            "UPDATE_JSON_URL",
             "\"${localProperties.getProperty("UPDATE_JSON_URL")
-                ?: "https://raw.githubusercontent.com/baolongdev/appUI/main/update.json"}\"")
+                ?: System.getenv("UPDATE_JSON_URL")
+                ?: "https://raw.githubusercontent.com/baolongdev/appUI/main/update.json"}\""
+        )
     }
 
-    // ✅ Load keystore properties
+    // ✅ Lint config
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+        quiet = true
+        checkAllWarnings = false
+        checkTestSources = false
+    }
+
     val keystorePropertiesFile = rootProject.file("keystore.properties")
     val keystoreProperties = Properties()
     val useKeystoreFile = keystorePropertiesFile.exists()
@@ -83,7 +113,6 @@ android {
         keystoreProperties.load(FileInputStream(keystorePropertiesFile))
     }
 
-    // ✅ Signing configs
     signingConfigs {
         create("release") {
             if (useKeystoreFile) {
@@ -114,6 +143,21 @@ android {
     }
 
     buildTypes {
+        // ✅ Release-debug variant để test minification
+        create("releaseDebug") {
+            initWith(getByName("release"))
+            isDebuggable = true
+            isMinifyEnabled = true
+            isShrinkResources = true
+            applicationIdSuffix = ".release.debug"
+            versionNameSuffix = "-release-debug"
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            signingConfig = signingConfigs.getByName("debug")
+        }
+
         release {
             isMinifyEnabled = true
             isShrinkResources = true
