@@ -12,7 +12,7 @@ plugins {
 object AppVersion {
     const val major = 1
     const val minor = 0
-    const val patch = 0
+    const val patch = 1
     const val code = major * 10000 + minor * 100 + patch
     const val name = "$major.$minor.$patch"
     const val dbVersion = 3

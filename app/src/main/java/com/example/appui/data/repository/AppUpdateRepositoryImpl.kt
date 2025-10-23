@@ -50,12 +50,8 @@ class AppUpdateRepositoryImpl @Inject constructor(
         return try {
             val currentVersionCode = getCurrentVersionCode()
 
-            val token = if (BuildConfig.GITHUB_TOKEN.isNotBlank()) {
-                "Bearer ${BuildConfig.GITHUB_TOKEN}"
-            } else null
-
             val response = withContext(Dispatchers.IO) {
-                gitHubApiService.getLatestRelease(GITHUB_OWNER, GITHUB_REPO, token)
+                gitHubApiService.getLatestRelease(GITHUB_OWNER, GITHUB_REPO)
             }
 
             when {
@@ -68,9 +64,19 @@ class AppUpdateRepositoryImpl @Inject constructor(
                         Either.Left("Không có dữ liệu từ GitHub")
                     }
                 }
-                response.code() == 403 -> {
-                    Either.Left("Đã vượt giới hạn API GitHub. Vui lòng thử lại sau 1 giờ.")
+
+                response.code() == 401 -> {
+                    Either.Left("Token GitHub không hợp lệ.\nVui lòng kiểm tra GITHUB_TOKEN trong local.properties")
                 }
+
+                response.code() == 403 -> {
+                    Either.Left("Đã vượt giới hạn API GitHub.\nVui lòng thử lại sau 1 giờ.")
+                }
+
+                response.code() == 404 -> {
+                    Either.Left("Không tìm thấy repository")
+                }
+
                 else -> {
                     Either.Left("Lỗi kiểm tra cập nhật: ${response.code()}")
                 }
@@ -78,7 +84,7 @@ class AppUpdateRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             val errorMsg = when (e) {
                 is java.net.UnknownHostException -> "Không có kết nối internet"
-                is java.net.SocketTimeoutException -> "Kết nối quá chậm, vui lòng thử lại"
+                is java.net.SocketTimeoutException -> "Kết nối quá chậm"
                 else -> "Lỗi: ${e.localizedMessage ?: "Không xác định"}"
             }
             Either.Left(errorMsg)
@@ -87,12 +93,8 @@ class AppUpdateRepositoryImpl @Inject constructor(
 
     override suspend fun getAllReleases(): Either<String, List<AppRelease>> {
         return try {
-            val token = if (BuildConfig.GITHUB_TOKEN.isNotBlank()) {
-                "Bearer ${BuildConfig.GITHUB_TOKEN}"
-            } else null
-
             val response = withContext(Dispatchers.IO) {
-                gitHubApiService.getReleases(GITHUB_OWNER, GITHUB_REPO, token)
+                gitHubApiService.getReleases(GITHUB_OWNER, GITHUB_REPO)
             }
 
             when {
@@ -107,9 +109,15 @@ class AppUpdateRepositoryImpl @Inject constructor(
                         Either.Left("Không có dữ liệu từ GitHub")
                     }
                 }
-                response.code() == 403 -> {
-                    Either.Left("Đã vượt giới hạn API GitHub. Vui lòng thử lại sau 1 giờ.")
+
+                response.code() == 401 -> {
+                    Either.Left("Token GitHub không hợp lệ")
                 }
+
+                response.code() == 403 -> {
+                    Either.Left("Đã vượt giới hạn API GitHub")
+                }
+
                 else -> {
                     Either.Left("Lỗi tải danh sách: ${response.code()}")
                 }
@@ -117,7 +125,7 @@ class AppUpdateRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             val errorMsg = when (e) {
                 is java.net.UnknownHostException -> "Không có kết nối internet"
-                is java.net.SocketTimeoutException -> "Kết nối quá chậm, vui lòng thử lại"
+                is java.net.SocketTimeoutException -> "Kết nối quá chậm"
                 else -> "Lỗi: ${e.localizedMessage ?: "Không xác định"}"
             }
             Either.Left(errorMsg)

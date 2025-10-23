@@ -1,5 +1,6 @@
 package com.example.appui.di
 
+import android.util.Log
 import com.example.appui.BuildConfig
 import com.example.appui.core.network.elevenlabs.XiHeaderInterceptor
 import com.example.appui.data.remote.elevenlabs.api.ElevenLabsApi
@@ -11,6 +12,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import okhttp3.ConnectionPool
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -23,6 +25,8 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
+
+    private const val TAG = "NetworkModule"
 
     @Provides
     @Singleton
@@ -48,12 +52,41 @@ object NetworkModule {
             .build()
     }
 
+    // ✅ THÊM: GitHub Token Interceptor
+    private fun createGitHubTokenInterceptor(): Interceptor {
+        return Interceptor { chain ->
+            val token = BuildConfig.GITHUB_TOKEN
+
+            // Debug logs
+            Log.d(TAG, "═══════════════════════════════")
+            Log.d(TAG, "GitHub Token Info:")
+            Log.d(TAG, "  Length: ${token.length}")
+            Log.d(TAG, "  Is blank: ${token.isBlank()}")
+
+            val request = if (token.isNotBlank()) {
+                Log.d(TAG, "  Preview: ${token.take(15)}...")
+                Log.d(TAG, "  ✅ Adding Authorization header")
+
+                chain.request().newBuilder()
+                    .addHeader("Authorization", "Bearer $token")
+                    .build()
+            } else {
+                Log.e(TAG, "  ⚠️ Token is BLANK! GitHub API will return 401")
+                chain.request()
+            }
+
+            Log.d(TAG, "═══════════════════════════════")
+            chain.proceed(request)
+        }
+    }
+
     @UpdateClient
     @Provides
     @Singleton
     fun provideUpdateOkHttpClient(): OkHttpClient {
         return OkHttpClient.Builder()
-            .addInterceptor(createLoggingInterceptor(HttpLoggingInterceptor.Level.BASIC))
+            .addInterceptor(createGitHubTokenInterceptor())  // ✅ THÊM TOKEN INTERCEPTOR
+            .addInterceptor(createLoggingInterceptor(HttpLoggingInterceptor.Level.HEADERS))  // ✅ Đổi sang HEADERS để xem Authorization
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
@@ -63,9 +96,6 @@ object NetworkModule {
 
     // ==================== RETROFIT INSTANCES ====================
 
-    /**
-     * ✅ CRITICAL: Must add @Named to distinguish between multiple Retrofit instances
-     */
     @Named("elevenlabs")
     @Provides
     @Singleton
@@ -79,9 +109,6 @@ object NetworkModule {
             .client(client)
             .build()
 
-    /**
-     * ✅ CRITICAL: Must add @Named to distinguish between multiple Retrofit instances
-     */
     @Named("github")
     @Provides
     @Singleton
@@ -96,9 +123,6 @@ object NetworkModule {
 
     // ==================== API SERVICES ====================
 
-    /**
-     * ✅ CRITICAL: Must specify which Retrofit to inject using @Named
-     */
     @Provides
     @Singleton
     fun provideElevenLabsApi(
@@ -106,9 +130,6 @@ object NetworkModule {
     ): ElevenLabsApi =
         retrofit.create(ElevenLabsApi::class.java)
 
-    /**
-     * ✅ CRITICAL: Must specify which Retrofit to inject using @Named
-     */
     @Provides
     @Singleton
     fun provideGitHubApiService(
@@ -119,7 +140,9 @@ object NetworkModule {
     // ==================== HELPER ====================
 
     private fun createLoggingInterceptor(level: HttpLoggingInterceptor.Level): HttpLoggingInterceptor {
-        return HttpLoggingInterceptor().apply {
+        return HttpLoggingInterceptor { message ->
+            Log.d("OkHttp", message)
+        }.apply {
             this.level = if (BuildConfig.DEBUG) level else HttpLoggingInterceptor.Level.NONE
         }
     }

@@ -12,13 +12,11 @@ interface GitHubApiService {
     suspend fun getLatestRelease(
         @Path("owner") owner: String,
         @Path("repo") repo: String,
-        @Header("Authorization") token: String? = null // ✅ Optional token
     ): Response<GitHubReleaseDto>
 
     @GET("repos/{owner}/{repo}/releases")
     suspend fun getReleases(
         @Path("owner") owner: String,
         @Path("repo") repo: String,
-        @Header("Authorization") token: String? = null // ✅ Optional token
     ): Response<List<GitHubReleaseDto>>
 }
