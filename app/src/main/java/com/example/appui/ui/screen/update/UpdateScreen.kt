@@ -3,18 +3,23 @@
 package com.example.appui.ui.screen.update
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -24,7 +29,6 @@ import com.example.appui.domain.model.UpdateInfo
 import com.example.appui.domain.repository.DownloadProgress
 import com.example.appui.ui.permission.InstallPermissionHandler
 import com.example.appui.ui.permission.NotificationPermissionHandler
-import com.example.appui.ui.theme.Spacing
 import com.example.appui.ui.theme.extendedColors
 import dev.jeziellago.compose.markdowntext.MarkdownText
 import java.text.SimpleDateFormat
@@ -36,7 +40,6 @@ fun UpdateScreen(
     onNavigateBack: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val extendedColors = MaterialTheme.extendedColors
     val snackbarHostState = remember { SnackbarHostState() }
 
     var showPermissionDialog by remember { mutableStateOf(false) }
@@ -49,37 +52,20 @@ fun UpdateScreen(
     }
 
     if (showExitDialog) {
-        AlertDialog(
+        SimpleAlertDialog(
             onDismissRequest = { showExitDialog = false },
-            icon = {
-                Icon(
-                    Icons.Default.Warning,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
-                )
+            icon = Icons.Outlined.Warning,
+            iconColor = MaterialTheme.colorScheme.error,
+            title = "Hủy tải xuống?",
+            message = "Bạn có chắc muốn hủy và thoát?",
+            confirmText = "Hủy",
+            dismissText = "Tiếp tục",
+            onConfirm = {
+                viewModel.cancelDownload()
+                showExitDialog = false
+                onNavigateBack()
             },
-            title = {
-                Text("Đang tải xuống")
-            },
-            text = {
-                Text("Bạn có chắc muốn hủy tải xuống và thoát?")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.cancelDownload()
-                        showExitDialog = false
-                        onNavigateBack()
-                    }
-                ) {
-                    Text("Hủy và thoát", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                Button(onClick = { showExitDialog = false }) {
-                    Text("Tiếp tục tải")
-                }
-            }
+            onDismiss = { showExitDialog = false }
         )
     }
 
@@ -131,56 +117,29 @@ fun UpdateScreen(
 
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Text(
-                        "Cập nhật ứng dụng",
-                        fontWeight = FontWeight.SemiBold
-                    )
-                },
-                navigationIcon = {
-                    IconButton(
-                        onClick = {
-                            if (uiState.isDownloading) {
-                                showExitDialog = true
-                            } else {
-                                onNavigateBack()
-                            }
-                        }
-                    ) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Quay lại")
+            CleanTopBar(
+                isDownloading = uiState.isDownloading,
+                isCheckingUpdate = uiState.isCheckingUpdate,
+                onNavigateBack = {
+                    if (uiState.isDownloading) {
+                        showExitDialog = true
+                    } else {
+                        onNavigateBack()
                     }
                 },
-                actions = {
-                    IconButton(
-                        onClick = { viewModel.checkForUpdate() },
-                        enabled = !uiState.isCheckingUpdate && !uiState.isDownloading
-                    ) {
-                        if (uiState.isCheckingUpdate) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(Icons.Default.Refresh, contentDescription = "Làm mới")
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
+                onRefresh = { viewModel.checkForUpdate() }
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = MaterialTheme.colorScheme.background
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues),
-            contentPadding = PaddingValues(Spacing.Medium),
-            verticalArrangement = Arrangement.spacedBy(Spacing.Medium)
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Current Version
             item {
                 CurrentVersionCard(
                     version = uiState.currentVersion,
@@ -188,6 +147,7 @@ fun UpdateScreen(
                 )
             }
 
+            // Update Available
             if ((uiState.updateAvailable || uiState.isDownloading) && uiState.latestUpdate != null) {
                 item {
                     UpdateAvailableCard(
@@ -207,31 +167,26 @@ fun UpdateScreen(
                             }
                         },
                         onCancelDownload = { viewModel.cancelDownload() },
-                        onSnooze = { viewModel.snoozeUpdate() },
+                        onSnooze = { viewModel.snoozeUpdate() }
                     )
                 }
             }
 
+            // Section Header
             item {
-                Text(
-                    text = "Tất cả phiên bản",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = Spacing.Medium, bottom = Spacing.Small)
-                )
+                SectionDivider(title = "Lịch sử phiên bản")
             }
 
+            // Loading
             if (uiState.isLoadingReleases) {
                 item {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(Spacing.Large),
+                            .padding(32.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(
-                            color = extendedColors.success
-                        )
+                        CircularProgressIndicator()
                     }
                 }
             } else {
@@ -242,7 +197,6 @@ fun UpdateScreen(
                     ReleaseCard(
                         release = release,
                         currentVersionCode = uiState.currentVersionCode,
-                        downloadProgress = uiState.downloadProgress,
                         isDownloading = uiState.isDownloading,
                         onDownload = { asset ->
                             if (!viewModel.hasInstallPermission()) {
@@ -258,8 +212,50 @@ fun UpdateScreen(
                     )
                 }
             }
+
+            item { Spacer(Modifier.height(16.dp)) }
         }
     }
+}
+
+@Composable
+private fun CleanTopBar(
+    isDownloading: Boolean,
+    isCheckingUpdate: Boolean,
+    onNavigateBack: () -> Unit,
+    onRefresh: () -> Unit
+) {
+    TopAppBar(
+        title = {
+            Column {
+                Text(
+                    "Cập nhật",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        },
+        navigationIcon = {
+            IconButton(onClick = onNavigateBack) {
+                Icon(Icons.Outlined.ArrowBack, "Quay lại")
+            }
+        },
+        actions = {
+            IconButton(
+                onClick = onRefresh,
+                enabled = !isCheckingUpdate && !isDownloading
+            ) {
+                if (isCheckingUpdate) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(Icons.Outlined.Refresh, "Làm mới")
+                }
+            }
+        }
+    )
 }
 
 @Composable
@@ -267,37 +263,46 @@ private fun CurrentVersionCard(
     version: String,
     versionCode: Int
 ) {
-    val extendedColors = MaterialTheme.extendedColors
-
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        shape = RoundedCornerShape(16.dp)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.MediumLarge),
+            modifier = Modifier.padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Icon(
-                Icons.Default.Info,
-                contentDescription = null,
-                tint = extendedColors.info,
-                modifier = Modifier.size(32.dp)
-            )
-            Column {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(56.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Filled.CheckCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     "Phiên bản hiện tại",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "v$version",
+                    style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "v$version ($versionCode)",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.primary
+                    "Build $versionCode",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -312,243 +317,114 @@ private fun UpdateAvailableCard(
     currentDownloadUrl: String?,
     onDownload: (String) -> Unit,
     onCancelDownload: () -> Unit,
-    onSnooze: () -> Unit,
+    onSnooze: () -> Unit
 ) {
-    val extendedColors = MaterialTheme.extendedColors
-
     val animatedProgress = remember { Animatable(0f) }
+    val isThisFileDownloading = isDownloading && currentDownloadUrl == updateInfo.downloadUrl
 
     LaunchedEffect(downloadProgress) {
         if (downloadProgress is DownloadProgress.Downloading) {
             animatedProgress.animateTo(
                 targetValue = downloadProgress.progress,
-                animationSpec = tween(
-                    durationMillis = 300,
-                    easing = FastOutSlowInEasing
-                )
+                animationSpec = tween(300)
             )
         }
     }
 
-    val isThisFileDownloading = isDownloading && currentDownloadUrl == updateInfo.downloadUrl
-
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
         )
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.MediumLarge),
-            verticalArrangement = Arrangement.spacedBy(Spacing.Medium)
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Header
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Icon(
-                    Icons.Default.Upgrade,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.size(32.dp)
-                )
-                Column {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Filled.Upgrade,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "Phiên bản mới có sẵn!",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                        "Phiên bản mới",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Spacer(Modifier.height(4.dp))
                     Text(
                         "v${updateInfo.version}",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.secondary,
-                        fontWeight = FontWeight.SemiBold
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
             }
 
+            // Release Notes
             if (updateInfo.releaseNotes.isNotBlank()) {
-                Divider(color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.2f))
+                HorizontalDivider()
 
-                MarkdownText(
-                    markdown = updateInfo.releaseNotes,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                    ),
-                    maxLines = 8,
-                    modifier = Modifier.padding(vertical = Spacing.Small)
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Có gì mới",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    MarkdownText(
+                        markdown = updateInfo.releaseNotes,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 4
+                    )
+                }
             }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 100.dp)
-            ) {
-                when {
-                    isThisFileDownloading && downloadProgress is DownloadProgress.Downloading -> {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(Spacing.Small)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    "Đang tải xuống...",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                                Text(
-                                    "${(animatedProgress.value * 100).toInt()}%",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.secondary
-                                )
-                            }
-                            LinearProgressIndicator(
-                                progress = { animatedProgress.value },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(8.dp)
-                                    .clip(RoundedCornerShape(4.dp)),
-                                color = MaterialTheme.colorScheme.secondary,
-                                trackColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f)
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    "Không được thoát trong khi tải",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
-                                )
-                                TextButton(onClick = onCancelDownload) {
-                                    Text("Hủy", color = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-                    }
+            HorizontalDivider()
 
-                    isThisFileDownloading && downloadProgress is DownloadProgress.Completed -> {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            color = extendedColors.success.copy(alpha = 0.1f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(Spacing.Medium),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
-                            ) {
-                                Icon(
-                                    Icons.Default.CheckCircle,
-                                    contentDescription = null,
-                                    tint = extendedColors.success,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Column {
-                                    Text(
-                                        "Đã tải xong!",
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        fontWeight = FontWeight.Bold,
-                                        color = extendedColors.success
-                                    )
-                                    Text(
-                                        "Đang mở trình cài đặt...",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    isThisFileDownloading && downloadProgress is DownloadProgress.Failed -> {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(Spacing.Small)
-                        ) {
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                color = MaterialTheme.colorScheme.error.copy(alpha = 0.1f),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(Spacing.Medium),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Error,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                    Text(
-                                        downloadProgress.error,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                            }
-                            Button(
-                                onClick = { onDownload(updateInfo.downloadUrl) },
-                                modifier = Modifier.fillMaxWidth(),
-                                enabled = !isDownloading,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.secondary
-                                )
-                            ) {
-                                Icon(Icons.Default.Refresh, contentDescription = null)
-                                Spacer(Modifier.width(Spacing.Small))
-                                Text("Thử lại")
-                            }
-                        }
-                    }
-
-                    else -> {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(Spacing.Small)
-                        ) {
-                            Button(
-                                onClick = { onDownload(updateInfo.downloadUrl) },
-                                modifier = Modifier.fillMaxWidth(),
-                                enabled = !isDownloading,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.secondary,
-                                    disabledContainerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)
-                                )
-                            ) {
-                                Icon(Icons.Default.Download, contentDescription = null)
-                                Spacer(Modifier.width(Spacing.Small))
-                                Text(if (isDownloading) "Đang tải file khác..." else "Tải về và cài đặt")
-                            }
-
-                            TextButton(
-                                onClick = onSnooze,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(
-                                    Icons.Default.Schedule,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(Modifier.width(Spacing.ExtraSmall))
-                                Text("Bỏ qua (nhắc lại sau 7 ngày)")
-                            }
-                        }
-                    }
+            // Download State
+            AnimatedContent(
+                targetState = when {
+                    isThisFileDownloading && downloadProgress is DownloadProgress.Downloading -> "downloading"
+                    isThisFileDownloading && downloadProgress is DownloadProgress.Completed -> "completed"
+                    isThisFileDownloading && downloadProgress is DownloadProgress.Failed -> "failed"
+                    else -> "idle"
+                },
+                label = "download_state"
+            ) { state ->
+                when (state) {
+                    "downloading" -> DownloadingState(
+                        progress = animatedProgress.value,
+                        onCancel = onCancelDownload
+                    )
+                    "completed" -> CompletedState()
+                    "failed" -> FailedState(
+                        error = (downloadProgress as DownloadProgress.Failed).error,
+                        onRetry = { onDownload(updateInfo.downloadUrl) },
+                        isDownloading = isDownloading
+                    )
+                    else -> IdleState(
+                        fileSize = updateInfo.fileSize,
+                        isDownloading = isDownloading,
+                        onDownload = { onDownload(updateInfo.downloadUrl) },
+                        onSnooze = onSnooze
+                    )
                 }
             }
         }
@@ -556,32 +432,234 @@ private fun UpdateAvailableCard(
 }
 
 @Composable
+private fun DownloadingState(
+    progress: Float,
+    onCancel: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Đang tải xuống",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                "${(progress * 100).toInt()}%",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+
+        LinearProgressIndicator(
+            progress = { progress },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .clip(RoundedCornerShape(4.dp)),
+        )
+
+        OutlinedButton(
+            onClick = onCancel,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Outlined.Close, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Hủy")
+        }
+    }
+}
+
+@Composable
+private fun CompletedState() {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.extendedColors.success.copy(alpha = 0.15f)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                Icons.Filled.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.extendedColors.success,
+                modifier = Modifier.size(24.dp)
+            )
+            Column {
+                Text(
+                    "Hoàn tất!",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.extendedColors.success
+                )
+                Text(
+                    "Đang mở trình cài đặt...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FailedState(
+    error: String,
+    onRetry: () -> Unit,
+    isDownloading: Boolean
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(
+                    Icons.Outlined.ErrorOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(24.dp)
+                )
+                Text(
+                    error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        Button(
+            onClick = onRetry,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isDownloading
+        ) {
+            Icon(Icons.Outlined.Refresh, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Thử lại")
+        }
+    }
+}
+
+@Composable
+private fun IdleState(
+    fileSize: Long,
+    isDownloading: Boolean,
+    onDownload: () -> Unit,
+    onSnooze: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // File Size
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        Icons.Outlined.InsertDriveFile,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        "%.1f MB".format(Locale.US, fileSize / (1024f * 1024f)),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+
+        Button(
+            onClick = onDownload,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isDownloading
+        ) {
+            Icon(Icons.Outlined.Download, null, Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                if (isDownloading) "Đang tải..." else "Tải về & Cài đặt",
+                style = MaterialTheme.typography.labelLarge
+            )
+        }
+
+        TextButton(
+            onClick = onSnooze,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Outlined.Schedule, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Nhắc lại sau 7 ngày")
+        }
+    }
+}
+
+@Composable
+private fun SectionDivider(title: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        HorizontalDivider(modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
 private fun ReleaseCard(
     release: AppRelease,
     currentVersionCode: Int,
-    downloadProgress: DownloadProgress,
     isDownloading: Boolean,
     onDownload: (ReleaseAsset) -> Unit
 ) {
-    val extendedColors = MaterialTheme.extendedColors
     var isExpanded by remember { mutableStateOf(false) }
-
     val versionCode = parseVersionCode(release.tagName)
     val isCurrent = versionCode == currentVersionCode
     val apkAsset = release.assets.firstOrNull { it.name.endsWith(".apk") }
 
-    ElevatedCard(
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        shape = RoundedCornerShape(16.dp),
+        colors = if (isCurrent) {
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+            )
+        } else {
+            CardDefaults.cardColors()
+        }
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.MediumLarge),
-            verticalArrangement = Arrangement.spacedBy(Spacing.Small)
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -590,23 +668,15 @@ private fun ReleaseCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
                             release.name,
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.SemiBold
                         )
                         if (release.isPrerelease) {
-                            AssistChip(
-                                onClick = {},
-                                label = { Text("Beta", style = MaterialTheme.typography.labelSmall) },
-                                modifier = Modifier.height(24.dp),
-                                colors = AssistChipDefaults.assistChipColors(
-                                    containerColor = extendedColors.warning.copy(alpha = 0.2f),
-                                    labelColor = extendedColors.warning
-                                )
-                            )
+                            SimpleBadge(text = "Beta", color = MaterialTheme.extendedColors.warning)
                         }
                     }
                     Text(
@@ -617,45 +687,28 @@ private fun ReleaseCard(
                 }
 
                 if (isCurrent) {
-                    AssistChip(
-                        onClick = {},
-                        label = { Text("Hiện tại") },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = extendedColors.success,
-                            labelColor = extendedColors.onSuccess,
-                            leadingIconContentColor = extendedColors.onSuccess
-                        )
-                    )
+                    SimpleBadge(text = "Hiện tại", color = MaterialTheme.extendedColors.success)
                 }
             }
 
+            // Release Notes
             if (release.body.isNotBlank()) {
-                Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                HorizontalDivider()
 
                 MarkdownText(
                     markdown = release.body,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                    maxLines = if (isExpanded) Int.MAX_VALUE else 5,
-                    modifier = Modifier.padding(vertical = Spacing.Small)
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = if (isExpanded) Int.MAX_VALUE else 3
                 )
 
-                if (release.body.lines().size > 5) {
+                if (release.body.lines().size > 3) {
                     TextButton(
                         onClick = { isExpanded = !isExpanded },
                         modifier = Modifier.align(Alignment.End)
                     ) {
                         Text(if (isExpanded) "Thu gọn" else "Xem thêm")
                         Icon(
-                            if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            if (isExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
                             contentDescription = null,
                             modifier = Modifier.size(16.dp)
                         )
@@ -663,8 +716,9 @@ private fun ReleaseCard(
                 }
             }
 
+            // Download
             apkAsset?.let { apk ->
-                Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                HorizontalDivider()
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -673,36 +727,27 @@ private fun ReleaseCard(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Icon(
-                            Icons.Default.InsertDriveFile,
+                            Icons.Outlined.InsertDriveFile,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
                             "%.1f MB".format(Locale.US, apk.size / (1024f * 1024f)),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
                         )
                     }
 
                     if (!isCurrent) {
-                        Button(
+                        FilledTonalButton(
                             onClick = { onDownload(apk) },
-                            enabled = !isDownloading,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.secondary,
-                                disabledContainerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)
-                            )
+                            enabled = !isDownloading
                         ) {
-                            Icon(
-                                Icons.Default.Download,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(Spacing.ExtraSmall))
+                            Icon(Icons.Outlined.Download, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
                             Text(if (isDownloading) "Đang tải..." else "Tải về")
                         }
                     }
@@ -712,10 +757,76 @@ private fun ReleaseCard(
     }
 }
 
+@Composable
+private fun SimpleBadge(
+    text: String,
+    color: Color
+) {
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = color.copy(alpha = 0.15f)
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = color,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        )
+    }
+}
+
+@Composable
+private fun SimpleAlertDialog(
+    onDismissRequest: () -> Unit,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    iconColor: Color,
+    title: String,
+    message: String,
+    confirmText: String,
+    dismissText: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        icon = {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = iconColor,
+                modifier = Modifier.size(32.dp)
+            )
+        },
+        title = {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Text(
+                message,
+                style = MaterialTheme.typography.bodyLarge
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(confirmText)
+            }
+        },
+        dismissButton = {
+            Button(onClick = onDismiss) {
+                Text(dismissText)
+            }
+        }
+    )
+}
+
 private fun parseVersionCode(tagName: String): Int {
     val version = tagName.removePrefix("v")
     val parts = version.split(".")
-
     return try {
         val major = parts.getOrNull(0)?.toIntOrNull() ?: 0
         val minor = parts.getOrNull(1)?.toIntOrNull() ?: 0
@@ -730,7 +841,7 @@ private fun formatDate(dateString: String): String {
     return try {
         val parser = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault())
         parser.timeZone = TimeZone.getTimeZone("UTC")
-        val formatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+        val formatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
         val date = parser.parse(dateString)
         formatter.format(date ?: Date())
     } catch (e: Exception) {

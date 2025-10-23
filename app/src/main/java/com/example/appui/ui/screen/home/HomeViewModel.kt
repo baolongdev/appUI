@@ -1,5 +1,6 @@
 package com.example.appui.ui.screen.home
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.appui.BuildConfig
@@ -17,15 +18,21 @@ import javax.inject.Inject
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val checkAppUpdateUseCase: CheckAppUpdateUseCase,
-    private val updatePreferences: UpdatePreferences
+    private val updatePreferences: UpdatePreferences,
+    private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
     private val _ui = MutableStateFlow(HomeUiState())
     val ui: StateFlow<HomeUiState> = _ui.asStateFlow()
 
+    // ✅ Persist state across configuration changes
+    private var hasCheckedUpdate: Boolean
+        get() = savedStateHandle.get<Boolean>("has_checked_update") ?: false
+        set(value) = savedStateHandle.set("has_checked_update", value)
+
     init {
         loadCurrentVersion()
-        checkForUpdates()
+        checkForUpdatesOnce()
     }
 
     fun selectSection(section: HomeSection) {
@@ -40,22 +47,39 @@ class HomeViewModel @Inject constructor(
         _ui.update { it.copy(currentVersion = BuildConfig.VERSION_NAME) }
     }
 
-    private fun checkForUpdates() {
+    // ✅ Chỉ check 1 lần duy nhất per session
+    private fun checkForUpdatesOnce() {
+        // Nếu đã check rồi thì skip
+        if (hasCheckedUpdate) {
+            return
+        }
+
         viewModelScope.launch {
-            val isScreenVisited = updatePreferences.isUpdateScreenVisited()
-            if (isScreenVisited) return@launch
+            // Check persistent state
+            val hasVisitedUpdateScreen = updatePreferences.isUpdateScreenVisited()
+            if (hasVisitedUpdateScreen) {
+                hasCheckedUpdate = true
+                return@launch
+            }
 
             when (val result = checkAppUpdateUseCase()) {
-                is Either.Left -> {}
+                is Either.Left -> {
+                    hasCheckedUpdate = true
+                }
                 is Either.Right -> {
                     val updateInfo = result.value
+                    hasCheckedUpdate = true
+
                     if (updateInfo.isNewer) {
                         val isSnoozed = updatePreferences.isUpdateSnoozed(updateInfo.version)
-                        if (!isSnoozed) {
+                        val isDismissed = updatePreferences.isVersionDismissed(updateInfo.version)
+
+                        if (!isSnoozed && !isDismissed) {
                             _ui.update {
                                 it.copy(
                                     hasUpdate = true,
-                                    updateVersion = updateInfo.version
+                                    updateVersion = updateInfo.version,
+                                    showUpdateDialog = true
                                 )
                             }
                         }
@@ -66,10 +90,23 @@ class HomeViewModel @Inject constructor(
     }
 
     fun dismissUpdateNotification() {
-        _ui.update { it.copy(showUpdateDialog = false) }
+        viewModelScope.launch {
+            val version = _ui.value.updateVersion
+            if (version.isNotEmpty()) {
+                updatePreferences.dismissVersion(version)
+            }
+
+            _ui.update {
+                it.copy(
+                    showUpdateDialog = false
+                )
+            }
+        }
     }
 
     fun showUpdateDialog() {
-        _ui.update { it.copy(showUpdateDialog = true) }
+        if (_ui.value.hasUpdate) {
+            _ui.update { it.copy(showUpdateDialog = true) }
+        }
     }
 }

@@ -89,8 +89,12 @@ class UpdateViewModel @Inject constructor(
                 is Either.Right -> {
                     val updateInfo = result.value
 
+                    // ✅ Nếu có phiên bản mới và không bị snoozed
                     val isSnoozed = updatePreferences.isUpdateSnoozed(updateInfo.version)
+
                     if (updateInfo.isNewer && !isSnoozed) {
+                        // ✅ Clear dismissed và screen visited để popup hiện lại với version mới
+                        updatePreferences.clearDismissed()
                         updatePreferences.clearUpdateScreenVisited()
                         updatePreferences.clearSnooze()
                     }

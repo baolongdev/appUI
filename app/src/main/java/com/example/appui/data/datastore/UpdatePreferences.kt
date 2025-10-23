@@ -25,10 +25,33 @@ class UpdatePreferences @Inject constructor(
         private val KEY_IS_DOWNLOADING = booleanPreferencesKey("is_downloading")
         private val KEY_DOWNLOAD_PROGRESS = floatPreferencesKey("download_progress")
         private val KEY_UPDATE_SCREEN_VISITED = booleanPreferencesKey("update_screen_visited")
-        private val KEY_SNOOZED_VERSION = stringPreferencesKey("snoozed_version") // ✅ NEW
+        private val KEY_SNOOZED_VERSION = stringPreferencesKey("snoozed_version")
+        // ✅ NEW: Track dismissed version
+        private val KEY_DISMISSED_VERSION = stringPreferencesKey("dismissed_version")
     }
 
-    // ✅ NEW: Snooze update (7 days)
+    // ✅ NEW: Mark version as dismissed (user clicked "Để sau")
+    suspend fun dismissVersion(version: String) {
+        dataStore.edit { prefs ->
+            prefs[KEY_DISMISSED_VERSION] = version
+        }
+    }
+
+    // ✅ NEW: Check if version was dismissed
+    suspend fun isVersionDismissed(version: String): Boolean {
+        return dataStore.data.map { prefs ->
+            prefs[KEY_DISMISSED_VERSION] == version
+        }.first()
+    }
+
+    // ✅ NEW: Clear dismissed version (when new version detected)
+    suspend fun clearDismissed() {
+        dataStore.edit { prefs ->
+            prefs.remove(KEY_DISMISSED_VERSION)
+        }
+    }
+
+    // Snooze update (7 days)
     suspend fun snoozeUpdate(version: String, days: Int = 7) {
         val snoozeUntil = System.currentTimeMillis() + (days * 24 * 60 * 60 * 1000L)
         dataStore.edit { prefs ->

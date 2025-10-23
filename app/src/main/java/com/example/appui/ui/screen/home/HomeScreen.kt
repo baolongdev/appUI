@@ -34,12 +34,6 @@ fun HomeScreen(
     val homeState by viewModel.ui.collectAsState()
     val agentsState by agentsViewModel.ui.collectAsState()
 
-    LaunchedEffect(homeState.hasUpdate) {
-        if (homeState.hasUpdate && !homeState.showUpdateDialog) {
-            viewModel.showUpdateDialog()
-        }
-    }
-
     Box(Modifier.fillMaxSize()) {
         HomeSidebar(
             isOpen = homeState.sidebarOpen,
@@ -62,6 +56,7 @@ fun HomeScreen(
             onClearAgentDetail = agentsViewModel::clearDetail
         )
 
+        // ✅ Dialog tự động hiện khi showUpdateDialog = true
         if (homeState.showUpdateDialog) {
             UpdateNotificationDialog(
                 version = homeState.updateVersion,
@@ -137,7 +132,7 @@ private fun UpdateNotificationDialog(
                 Box(contentAlignment = androidx.compose.ui.Alignment.Center) {
                     Icon(
                         Icons.Default.Upgrade,
-                        null,
+                        contentDescription = null,
                         modifier = Modifier.size(28.dp),
                         tint = successColor
                     )
@@ -170,7 +165,7 @@ private fun UpdateNotificationDialog(
                     ) {
                         Icon(
                             Icons.Default.Info,
-                            null,
+                            contentDescription = null,
                             modifier = Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -190,7 +185,7 @@ private fun UpdateNotificationDialog(
                     containerColor = successColor
                 )
             ) {
-                Icon(Icons.Default.Upgrade, null, Modifier.size(18.dp))
+                Icon(Icons.Default.Upgrade, contentDescription = null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Cập nhật ngay")
             }
