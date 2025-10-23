@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}  # ✅ Dùng GITHUB_TOKEN cho Git operations
       
       - name: Switch to main branch
         run: |
@@ -43,10 +43,10 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
       
-      # ✅ Thêm step tạo local.properties
+      # ✅ CẬP NHẬT: Dùng GH_PAT cho BuildConfig
       - name: Create local.properties
         run: |
-          echo "github.token=${{ secrets.GITHUB_TOKEN }}" > local.properties
+          echo "github.token=${{ secrets.GH_PAT }}" > local.properties
           echo "XI_BASE_URL=${{ secrets.XI_BASE_URL }}" >> local.properties
           echo "XI_API_KEY=${{ secrets.XI_API_KEY }}" >> local.properties
           echo "XI_AGENT_ID=${{ secrets.XI_AGENT_ID }}" >> local.properties
@@ -66,10 +66,11 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          # ✅ Environment variables cho BuildConfig
           XI_BASE_URL: ${{ secrets.XI_BASE_URL }}
           XI_API_KEY: ${{ secrets.XI_API_KEY }}
           XI_AGENT_ID: ${{ secrets.XI_AGENT_ID }}
+          # ✅ THÊM: Pass GH_PAT as environment variable (fallback)
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           ./gradlew assembleRelease \
             --parallel \
@@ -147,4 +148,4 @@ jobs:
             ---
             *Version Code: ${{ steps.version.outputs.version_code }}*
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # ✅ Dùng GITHUB_TOKEN cho GitHub Release
