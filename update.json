@@ -1,8 +1,8 @@
 {
-  "latestVersion": "1.1.0",
-  "latestVersionCode": 10100,
-  "downloadUrl": "https://github.com/baolongdev/appUI/releases/download/v1.1.0/appUI-release-1.1.0.apk",
-  "releaseNotes": "Update to version 1.1.0",
+  "latestVersion": "1.0.1",
+  "latestVersionCode": 10001,
+  "downloadUrl": "https://github.com/baolongdev/appUI/releases/download/v1.0.1/appUI-release-1.0.1.apk",
+  "releaseNotes": "Update to version 1.0.1",
   "mandatory": false,
-  "releasedAt": "2025-10-23T10:29:52Z"
+  "releasedAt": "2025-10-24T10:43:35Z"
 }
