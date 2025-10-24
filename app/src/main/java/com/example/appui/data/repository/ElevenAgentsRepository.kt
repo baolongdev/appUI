@@ -13,9 +13,9 @@ import javax.inject.Singleton
 class ElevenAgentsRepository @Inject constructor(
     private val api: ElevenLabsApi
 ) {
+
     /**
      * Lists available agents with optional search filter.
-     *
      * @param search Optional search query
      * @return List of agent summaries
      */
@@ -26,7 +26,6 @@ class ElevenAgentsRepository @Inject constructor(
 
     /**
      * Gets detailed information about a specific agent.
-     *
      * @param agentId Unique agent identifier
      * @return Agent detail model
      */

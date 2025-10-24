@@ -1,5 +1,6 @@
 package com.example.appui.ui.screen.home
 
+import android.util.Log
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -29,6 +30,7 @@ fun HomeScreen(
     agentsViewModel: AgentsViewModel = hiltViewModel(),
     onVoiceClick: (String?) -> Unit = {},
     onAgentsClick: () -> Unit = {},
+    onAvatarView: (String, String?) -> Unit = { _, _ -> },
     onNavigateToUpdate: () -> Unit = {}
 ) {
     val homeState by viewModel.ui.collectAsState()
@@ -51,12 +53,12 @@ fun HomeScreen(
             currentSection = homeState.section,
             onVoiceClick = onVoiceClick,
             onAgentsClick = onAgentsClick,
+            onAvatarView = onAvatarView,
             agentsState = agentsState,
             onLoadAgentDetail = agentsViewModel::loadDetail,
             onClearAgentDetail = agentsViewModel::clearDetail
         )
 
-        // ✅ Dialog tự động hiện khi showUpdateDialog = true
         if (homeState.showUpdateDialog) {
             UpdateNotificationDialog(
                 version = homeState.updateVersion,
@@ -70,6 +72,7 @@ fun HomeScreen(
     }
 }
 
+// ✅ THÊM: HomeSidebar function
 @Composable
 private fun HomeSidebar(
     isOpen: Boolean,
@@ -113,6 +116,7 @@ private fun HomeSidebar(
     }
 }
 
+// ✅ THÊM: UpdateNotificationDialog function
 @Composable
 private fun UpdateNotificationDialog(
     version: String,
@@ -205,6 +209,7 @@ private fun HomeScaffold(
     currentSection: HomeSection,
     onVoiceClick: (String?) -> Unit,
     onAgentsClick: () -> Unit,
+    onAvatarView: (String, String?) -> Unit,
     agentsState: com.example.appui.ui.screen.agents.AgentsUiState,
     onLoadAgentDetail: (String) -> Unit,
     onClearAgentDetail: () -> Unit
@@ -234,20 +239,24 @@ private fun HomeScaffold(
     ) {
         when (currentSection) {
             HomeSection.HOME -> HomeContent(
-                onVoiceClick = { onVoiceClick(null) },
+                agents = agentsState.agents,
+                onVoiceClick = { agentId -> onVoiceClick(agentId) },
                 onAgentsClick = onAgentsClick
             )
 
-            HomeSection.MY_AGENTS -> MyAgentsContent(
-                agents = agentsState.agents,
-                selectedAgent = agentsState.selected,
-                isLoadingDetail = agentsState.isLoading && agentsState.selected != null,
-                detailError = agentsState.error,
-                onOpenAgent = onLoadAgentDetail,
-                onPlayAgent = onVoiceClick,
-                onToggleFavorite = { _, _ -> },
-                onCloseDetail = onClearAgentDetail
-            )
+            HomeSection.MY_AGENTS -> {
+                MyAgentsContent(
+                    agents = agentsState.agents,
+                    selectedAgent = agentsState.selected,
+                    isLoadingDetail = agentsState.isLoading && agentsState.selected != null,
+                    detailError = agentsState.error,
+                    onOpenAgent = onLoadAgentDetail,
+                    onPlayAgent = onVoiceClick,
+                    onAvatarView = onAvatarView,
+                    onToggleFavorite = { _, _ -> },
+                    onCloseDetail = onClearAgentDetail
+                )
+            }
 
             HomeSection.HISTORY -> ConversationHistoryContent()
         }

@@ -684,7 +684,7 @@ private fun ModernTagDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Input Section
+                // ✅ INPUT SECTION
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
@@ -813,9 +813,188 @@ private fun ModernTagDialog(
                     }
                 }
 
-                // Suggested Tags Section (keep from previous version with color updates)
-                // Current Tags Section (keep from previous version with color updates)
-                // Removed Tags Section (keep from previous version with color updates)
+                // ✅ SUGGESTED TAGS SECTION
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Filled.Lightbulb,
+                                        null,
+                                        Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
+                            }
+                            Text(
+                                "Gợi ý",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            suggestedTags.forEach { tag ->
+                                val isActive = finalTags.contains(tag)
+                                FilterChip(
+                                    selected = isActive,
+                                    onClick = {
+                                        if (isActive) {
+                                            if (currentTags.contains(tag)) {
+                                                tagsToRemove = tagsToRemove + tag
+                                            } else {
+                                                tagsToAdd = tagsToAdd - tag
+                                            }
+                                        } else {
+                                            if (tagsToRemove.contains(tag)) {
+                                                tagsToRemove = tagsToRemove - tag
+                                            } else {
+                                                tagsToAdd = tagsToAdd + tag
+                                            }
+                                        }
+                                    },
+                                    label = { Text(tag) },
+                                    leadingIcon = if (isActive) {
+                                        { Icon(Icons.Filled.Check, null, Modifier.size(18.dp)) }
+                                    } else null,
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // ✅ CURRENT TAGS SECTION
+                if (finalTags.isNotEmpty()) {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            Icons.Filled.Tag,
+                                            null,
+                                            Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.onTertiaryContainer
+                                        )
+                                    }
+                                }
+                                Text(
+                                    "Tags hiện tại",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.tertiary
+                                )
+                            }
+
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                finalTags.forEach { tag ->
+                                    val willBeRemoved = tagsToRemove.contains(tag)
+                                    InputChip(
+                                        selected = !willBeRemoved,
+                                        onClick = {
+                                            if (currentTags.contains(tag)) {
+                                                if (willBeRemoved) {
+                                                    tagsToRemove = tagsToRemove - tag
+                                                } else {
+                                                    tagsToRemove = tagsToRemove + tag
+                                                }
+                                            } else {
+                                                tagsToAdd = tagsToAdd - tag
+                                            }
+                                        },
+                                        label = {
+                                            Text(
+                                                tag,
+                                                style = if (willBeRemoved) {
+                                                    MaterialTheme.typography.bodyMedium.copy(
+                                                        textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough
+                                                    )
+                                                } else {
+                                                    MaterialTheme.typography.bodyMedium
+                                                }
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            Icon(
+                                                if (willBeRemoved) Icons.Filled.Undo else Icons.Filled.Close,
+                                                null,
+                                                Modifier.size(18.dp)
+                                            )
+                                        },
+                                        colors = InputChipDefaults.inputChipColors(
+                                            containerColor = if (willBeRemoved) {
+                                                MaterialTheme.colorScheme.errorContainer
+                                            } else {
+                                                MaterialTheme.colorScheme.primaryContainer
+                                            },
+                                            labelColor = if (willBeRemoved) {
+                                                MaterialTheme.colorScheme.onErrorContainer
+                                            } else {
+                                                MaterialTheme.colorScheme.onPrimaryContainer
+                                            }
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ✅ REMOVED TAGS PREVIEW
+                if (tagsToRemove.isNotEmpty()) {
+                    item {
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Filled.Delete,
+                                    null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    "Sẽ xóa ${tagsToRemove.size} tag: ${tagsToRemove.joinToString(", ")}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -838,6 +1017,7 @@ private fun ModernTagDialog(
         }
     )
 }
+
 
 // ============= MODERN SHARE DIALOG =============
 @Composable

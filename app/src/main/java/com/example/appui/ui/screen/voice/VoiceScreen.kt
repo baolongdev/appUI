@@ -13,9 +13,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -26,7 +27,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -40,21 +40,21 @@ import com.example.appui.ui.theme.Spacing
 import com.example.appui.ui.theme.extendedColors
 import com.example.appui.utils.showToast
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 
 /**
- * Voice Screen - Modern & Unified Design
+ * Modern voice conversation screen - Single page layout
  */
 @Composable
 fun VoiceScreen(
     agentId: String? = null,
+    agentName: String? = null,
     viewModel: VoiceViewModel = hiltViewModel(),
     onNavigateBack: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsState()
+    val messages by viewModel.conversationMessages.collectAsState() // ✅ Collect StateFlow
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var selectedTab by remember { mutableIntStateOf(0) }
     var showSaveDialog by remember { mutableStateOf(false) }
 
     val permissionsLauncher = rememberLauncherForActivityResult(
@@ -62,10 +62,9 @@ fun VoiceScreen(
     ) { permissions ->
         val allGranted = permissions.values.all { it }
         if (allGranted) {
-            viewModel.connect(agentId, enablePcmCapture = true)
+            viewModel.connect(agentId, agentName, enablePcmCapture = true)
         } else {
-            val denied = permissions.filterValues { !it }.keys
-            context.showToast("⚠️ Cần quyền: ${denied.joinToString()}")
+            context.showToast("❌ Cần quyền Mic để sử dụng Voice Chat")
         }
     }
 
@@ -80,18 +79,20 @@ fun VoiceScreen(
         }
 
         if (allGranted) {
-            viewModel.connect(agentId, enablePcmCapture = true)
+            viewModel.connect(agentId, agentName, enablePcmCapture = true)
         } else {
             permissionsLauncher.launch(requiredPermissions)
         }
     }
 
     fun handleDisconnect() {
-        if (viewModel.hasConversationToSave()) {
-            showSaveDialog = true
-        } else {
-            viewModel.disconnect()
-            onNavigateBack()
+        scope.launch {
+            if (viewModel.hasConversationToSave()) {
+                showSaveDialog = true
+            } else {
+                viewModel.disconnect()
+                onNavigateBack()
+            }
         }
     }
 
@@ -101,34 +102,31 @@ fun VoiceScreen(
         }
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            Log.d("VoiceScreen", "Screen disposing")
-            viewModel.disconnect()
-        }
-    }
-
     BackHandler(enabled = state.status == VoiceStatus.CONNECTED) {
         handleDisconnect()
     }
 
+    // ✅ FIXED: Dùng messages.size thay vì viewModel.conversationMessages.size
     if (showSaveDialog) {
         SaveConversationDialog(
-            messageCount = viewModel.conversationMessages.size,
+            messageCount = messages.size,
+            agentName = state.agentName ?: agentName, // ✅ Thêm dòng này
             onDismiss = { showSaveDialog = false },
             onSave = { title ->
                 scope.launch {
                     val saved = viewModel.saveConversation(title)
-                    context.showToast(if (saved) "✅ Đã lưu" else "❌ Lỗi")
-                    showSaveDialog = false
+                    if (saved) {
+                        context.showToast("✅ Đã lưu cuộc trò chuyện")
+                    }
                     viewModel.disconnect()
                     onNavigateBack()
                 }
             },
             onDiscard = {
-                showSaveDialog = false
-                viewModel.disconnect()
-                onNavigateBack()
+                scope.launch {
+                    viewModel.disconnect()
+                    onNavigateBack()
+                }
             }
         )
     }
@@ -137,6 +135,7 @@ fun VoiceScreen(
         topBar = {
             ModernVoiceTopBar(
                 agentId = agentId,
+                agentName = state.agentName ?: agentName,
                 status = state.status,
                 onNavigateBack = {
                     if (state.status == VoiceStatus.CONNECTED) {
@@ -149,74 +148,52 @@ fun VoiceScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            TabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.onSurface
-            ) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = {
-                        Text(
-                            "Control",
-                            fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal
-                        )
-                    }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = {
-                        Text(
-                            "Waveform",
-                            fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal
-                        )
-                    }
-                )
-            }
-
-            when (selectedTab) {
-                0 -> ControlTab(
-                    state = state,
-                    messages = viewModel.conversationMessages,
-                    isMicOn = !state.micMuted,
-                    onConnect = ::connectWithPermissionCheck,
-                    onDisconnect = ::handleDisconnect,
-                    onToggleMic = viewModel::toggleMic,
-                    onSetConversationMode = viewModel::setConversationMode,
-                    onSendText = viewModel::sendText
-                )
-                1 -> WaveformTab(state = state)
-            }
+        when (state.status) {
+            VoiceStatus.DISCONNECTED -> DisconnectedView(
+                onConnect = { connectWithPermissionCheck() },
+                modifier = Modifier.padding(paddingValues)
+            )
+            VoiceStatus.CONNECTING -> ConnectingView(
+                modifier = Modifier.padding(paddingValues)
+            )
+            VoiceStatus.CONNECTED -> ConnectedSinglePageView(
+                state = state,
+                viewModel = viewModel,
+                modifier = Modifier.padding(paddingValues)
+            )
         }
     }
 }
 
+// ==================== TOP BAR ====================
+
 @Composable
 private fun ModernVoiceTopBar(
     agentId: String?,
+    agentName: String?,
     status: VoiceStatus,
     onNavigateBack: () -> Unit
 ) {
     CenterAlignedTopAppBar(
         title = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text(
                     "Voice Chat",
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
-                agentId?.let {
+
+                agentName?.let {
                     Text(
                         it,
                         style = MaterialTheme.typography.labelSmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
             }
@@ -270,534 +247,223 @@ private fun ModernVoiceTopBar(
     )
 }
 
+// ==================== DISCONNECTED VIEW ====================
+
 @Composable
-private fun ControlTab(
-    state: VoiceUiState,
-    messages: List<ConversationMessage>,
-    isMicOn: Boolean,
+private fun DisconnectedView(
     onConnect: () -> Unit,
-    onDisconnect: () -> Unit,
-    onToggleMic: () -> Unit,
-    onSetConversationMode: (ConversationControlMode) -> Unit,
-    onSendText: (String) -> Unit
+    modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(Spacing.Medium),
-        verticalArrangement = Arrangement.spacedBy(Spacing.Medium)
+            .padding(Spacing.Large),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        ModernConnectionCard(
-            status = state.status,
-            onConnect = onConnect,
-            onDisconnect = onDisconnect
+        Icon(
+            Icons.Default.PhoneDisabled,
+            contentDescription = null,
+            modifier = Modifier.size(80.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
         )
 
-        if (state.status == VoiceStatus.CONNECTED) {
-            ModernModeCard(
-                currentMode = state.conversationMode,
-                onModeChange = onSetConversationMode
-            )
+        Spacer(modifier = Modifier.height(Spacing.Medium))
 
-            ModernMicCard(
-                isMicOn = isMicOn,
-                onToggleMic = onToggleMic
-            )
+        Text(
+            "Not Connected",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold
+        )
 
-            ModernConversationCard(
-                messages = messages
-            )
+        Spacer(modifier = Modifier.height(Spacing.Small))
 
-            ModernTextInputCard(
-                onSendText = onSendText
-            )
-        }
-    }
-}
+        Text(
+            "Tap the button below to start voice chat",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
-@Composable
-private fun ModernConnectionCard(
-    status: VoiceStatus,
-    onConnect: () -> Unit,
-    onDisconnect: () -> Unit
-) {
-    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = when (status) {
-                    VoiceStatus.CONNECTED -> MaterialTheme.extendedColors.success.copy(alpha = 0.2f)
-                    VoiceStatus.CONNECTING -> MaterialTheme.extendedColors.warning.copy(alpha = 0.2f)
-                    VoiceStatus.DISCONNECTED -> MaterialTheme.colorScheme.surfaceVariant
-                },
-                modifier = Modifier.size(80.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        when (status) {
-                            VoiceStatus.CONNECTED -> Icons.Default.Link
-                            VoiceStatus.CONNECTING -> Icons.Default.Sync
-                            VoiceStatus.DISCONNECTED -> Icons.Default.LinkOff
-                        },
-                        null,
-                        modifier = Modifier.size(40.dp),
-                        tint = when (status) {
-                            VoiceStatus.CONNECTED -> MaterialTheme.extendedColors.success
-                            VoiceStatus.CONNECTING -> MaterialTheme.extendedColors.warning
-                            VoiceStatus.DISCONNECTED -> MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
-                }
-            }
+        Spacer(modifier = Modifier.height(Spacing.Large))
 
-            Text(
-                when (status) {
-                    VoiceStatus.CONNECTED -> "Connected"
-                    VoiceStatus.CONNECTING -> "Connecting..."
-                    VoiceStatus.DISCONNECTED -> "Not Connected"
-                },
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-
-            when (status) {
-                VoiceStatus.DISCONNECTED -> {
-                    Button(
-                        onClick = onConnect,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Link, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Connect")
-                    }
-                }
-                VoiceStatus.CONNECTING -> {
-                    CircularProgressIndicator(modifier = Modifier.size(40.dp))
-                }
-                VoiceStatus.CONNECTED -> {
-                    OutlinedButton(
-                        onClick = onDisconnect,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Icon(Icons.Default.LinkOff, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Disconnect")
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ModernModeCard(
-    currentMode: ConversationControlMode,
-    onModeChange: (ConversationControlMode) -> Unit
-) {
-    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                "Conversation Mode",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                ConversationControlMode.entries.forEach { mode ->
-                FilterChip(
-                        selected = currentMode == mode,
-                        onClick = { onModeChange(mode) },
-                        label = { Text(mode.name) },
-                        leadingIcon = if (currentMode == mode) {
-                            { Icon(Icons.Default.Check, null, Modifier.size(18.dp)) }
-                        } else null,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ModernMicCard(
-    isMicOn: Boolean,
-    onToggleMic: () -> Unit
-) {
-    ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
-        onClick = onToggleMic
-    ) {
-        Row(
+        Button(
+            onClick = onConnect,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .height(56.dp)
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    shape = CircleShape,
-                    color = if (isMicOn)
-                        MaterialTheme.extendedColors.success.copy(alpha = 0.2f)
-                    else
-                        MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            if (isMicOn) Icons.Default.Mic else Icons.Default.MicOff,
-                            null,
-                            tint = if (isMicOn)
-                                MaterialTheme.extendedColors.success
-                            else
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+            Icon(Icons.Default.Phone, contentDescription = null)
+            Spacer(modifier = Modifier.width(Spacing.Small))
+            Text("Connect", style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
 
-                Column {
-                    Text(
-                        "Microphone",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        if (isMicOn) "Active" else "Muted",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+// ==================== CONNECTING VIEW ====================
 
-            Switch(
-                checked = isMicOn,
-                onCheckedChange = { onToggleMic() }
+@Composable
+private fun ConnectingView(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(Spacing.Large),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(60.dp),
+            strokeWidth = 4.dp
+        )
+
+        Spacer(modifier = Modifier.height(Spacing.Large))
+
+        Text(
+            "Connecting...",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
+        )
+
+        Spacer(modifier = Modifier.height(Spacing.Small))
+
+        Text(
+            "Please wait while we establish connection",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+// ==================== CONNECTED SINGLE PAGE VIEW ====================
+
+@Composable
+private fun ConnectedSinglePageView(
+    state: VoiceUiState,
+    viewModel: VoiceViewModel,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxSize()
+    ) {
+        AudioVisualizationSection(
+            state = state,
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.35f)
+        )
+
+        // ✅ Truyền viewModel thay vì messages list
+        ConversationSection(
+            viewModel = viewModel,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        )
+
+        ControlsSection(
+            state = state,
+            viewModel = viewModel,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+
+// ==================== 1️⃣ AUDIO VISUALIZATION SECTION ====================
+
+@Composable
+private fun AudioVisualizationSection(
+    state: VoiceUiState,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+    ) {
+        Column(
+            modifier = Modifier.padding(Spacing.Medium),
+            verticalArrangement = Arrangement.spacedBy(Spacing.Small)
+        ) {
+            // Mic Waveform
+            CompactWaveformCard(
+                title = "🎤 You",
+                pcmData = state.micPcmData,
+                color = MaterialTheme.colorScheme.primary,
+                isMuted = state.isEffectiveMicMuted,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
             )
+
+            // Agent Waveform
+            CompactWaveformCard(
+                title = "🤖 Agent",
+                pcmData = state.playbackPcmData,
+                color = MaterialTheme.colorScheme.secondary,
+                isMuted = false,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            )
+
+            // VAD Score Bar
+            CompactVadBar(vad = state.vad)
         }
     }
 }
 
 @Composable
-private fun ModernConversationCard(
-    messages: List<ConversationMessage> // ✅ Pass full objects to get speaker info
+private fun CompactWaveformCard(
+    title: String,
+    pcmData: PcmData?,
+    color: Color,
+    isMuted: Boolean,
+    modifier: Modifier = Modifier
 ) {
-    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "Conversation",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Surface(
-                    shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.primaryContainer
-                ) {
-                    Text(
-                        "${messages.size} messages",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
-
-            if (messages.isEmpty()) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = MaterialTheme.shapes.medium
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.ChatBubbleOutline,
-                                null,
-                                modifier = Modifier.size(40.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                "No messages yet",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    messages.takeLast(5).forEach { message ->
-                        MessageBubble(
-                            message = message.text,
-                            speaker = message.speaker,
-                            timestamp = message.timestamp
-                        )
-                    }
-
-                    if (messages.size > 5) {
-                        Text(
-                            "... and ${messages.size - 5} more",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = 8.dp)
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MessageBubble(
-    message: String,
-    speaker: Speaker,
-    timestamp: Long
-) {
-    val isUser = speaker == Speaker.USER
-
-    // Alignment: User (right), Agent (left)
-    val arrangement = if (isUser) Arrangement.End else Arrangement.Start
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = arrangement
-    ) {
-        Surface(
-            modifier = Modifier.widthIn(max = 280.dp),
-            color = if (isUser)
-                MaterialTheme.colorScheme.primaryContainer
-            else
-                MaterialTheme.colorScheme.surfaceVariant,
-            shape = MaterialTheme.shapes.medium
-        ) {
-            Column(
-                modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                // Speaker name with icon
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = if (isUser)
-                            MaterialTheme.colorScheme.primary
-                        else
-                            MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.size(20.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                if (isUser) Icons.Default.Person else Icons.Default.SmartToy,
-                                null,
-                                modifier = Modifier.size(12.dp),
-                                tint = if (isUser)
-                                    MaterialTheme.colorScheme.onPrimary
-                                else
-                                    MaterialTheme.colorScheme.onSecondary
-                            )
-                        }
-                    }
-
-                    Text(
-                        if (isUser) "You" else "Agent",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isUser)
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        else
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    // Timestamp
-                    Text(
-                        formatTimestamp(timestamp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isUser)
-                            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                        else
-                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
-                }
-
-                // Message text
-                Text(
-                    message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isUser)
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ModernTextInputCard(
-    onSendText: (String) -> Unit
-) {
-    var text by remember { mutableStateOf("") }
-
-    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                "Send Text Message",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Type a message...") },
-                    singleLine = true,
-                    shape = MaterialTheme.shapes.large
-                )
-
-                FilledTonalIconButton(
-                    onClick = {
-                        if (text.isNotBlank()) {
-                            onSendText(text)
-                            text = ""
-                        }
-                    },
-                    enabled = text.isNotBlank(),
-                    modifier = Modifier.size(48.dp),
-                    colors = IconButtonDefaults.filledTonalIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Icon(Icons.Default.Send, "Send")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun WaveformTab(state: VoiceUiState) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(Spacing.Medium),
-        verticalArrangement = Arrangement.spacedBy(Spacing.Medium)
-    ) {
-        ModernWaveformCard(
-            title = "Input Audio",
-            icon = Icons.Default.Mic,
-            pcmData = state.micPcmData,
-            color = MaterialTheme.colorScheme.primary
-        )
-
-        ModernWaveformCard(
-            title = "Output Audio",
-            icon = Icons.Default.Speaker,
-            pcmData = state.playbackPcmData,
-            color = MaterialTheme.colorScheme.secondary
-        )
-
-        if (state.micPcmData != null || state.playbackPcmData != null) {
-            ModernStatsCard(
-                inputPcm = state.micPcmData,
-                outputPcm = state.playbackPcmData
-            )
-        }
-    }
-}
-
-@Composable
-private fun ModernWaveformCard(
-    title: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    pcmData: PcmData?,
-    color: Color
-) {
-    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    shape = CircleShape,
-                    color = color.copy(alpha = 0.2f),
-                    modifier = Modifier.size(40.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            icon,
-                            null,
-                            tint = color,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-
-                Text(
                     title,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold
                 )
+                if (isMuted) {
+                    Surface(
+                        shape = MaterialTheme.shapes.extraSmall,
+                        color = MaterialTheme.extendedColors.warning.copy(alpha = 0.2f)
+                    ) {
+                        Text(
+                            "MUTED",
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.extendedColors.warning,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
 
-            Surface(
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(120.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = MaterialTheme.shapes.medium
+                    .height(60.dp)
+                    .background(
+                        MaterialTheme.colorScheme.surfaceVariant,
+                        MaterialTheme.shapes.small
+                    )
             ) {
-                if (pcmData != null) {
+                if (pcmData != null && !isMuted) {
                     WaveformVisualization(pcmData = pcmData, color = color)
                 } else {
                     Box(
@@ -805,115 +471,43 @@ private fun ModernWaveformCard(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            "No data",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            if (isMuted) "🔇" else "○",
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
                         )
                     }
                 }
             }
-
-            pcmData?.let {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    InfoChip("${it.samples.size} samples")
-                    InfoChip("${it.sampleRate} Hz")
-                }
-            }
         }
     }
 }
 
 @Composable
-private fun InfoChip(text: String) {
-    Surface(
-        shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.primaryContainer
+private fun CompactVadBar(vad: Float) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
-            text,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            color = MaterialTheme.colorScheme.onPrimaryContainer
+            "🎙️",
+            style = MaterialTheme.typography.bodyMedium
         )
-    }
-}
-
-@Composable
-private fun ModernStatsCard(
-    inputPcm: PcmData?,
-    outputPcm: PcmData?
-) {
-    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                "Audio Statistics",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                inputPcm?.let { pcm ->
-                    val peak = pcm.samples.maxOfOrNull { kotlin.math.abs(it.toInt()) } ?: 0 // ✅ FIXED
-                    val peakPercent = (peak.toFloat() / Short.MAX_VALUE) * 100f
-
-                    StatItem(
-                        label = "Input Peak",
-                        value = String.format("%.1f%%", peakPercent),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                outputPcm?.let { pcm ->
-                    val peak = pcm.samples.maxOfOrNull { kotlin.math.abs(it.toInt()) } ?: 0 // ✅ FIXED
-                    val peakPercent = (peak.toFloat() / Short.MAX_VALUE) * 100f
-
-                    StatItem(
-                        label = "Output Peak",
-                        value = String.format("%.1f%%", peakPercent),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun StatItem(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = MaterialTheme.shapes.medium
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                value,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                label,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        LinearProgressIndicator(
+            progress = { vad },
+            modifier = Modifier
+                .weight(1f)
+                .height(8.dp)
+                .clip(MaterialTheme.shapes.small),
+        )
+        Text(
+            "${(vad * 100).toInt()}%",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.width(40.dp)
+        )
     }
 }
 
@@ -922,41 +516,368 @@ private fun WaveformVisualization(
     pcmData: PcmData,
     color: Color
 ) {
+    val animatedAlpha by animateFloatAsState(
+        targetValue = 1f,
+        animationSpec = tween(durationMillis = 100),
+        label = "waveform_alpha"
+    )
+
     Canvas(modifier = Modifier.fillMaxSize()) {
         val samples = pcmData.samples
         if (samples.isEmpty()) return@Canvas
 
         val width = size.width
         val height = size.height
-        val centerY = height / 2f
-        val step = maxOf(1, samples.size / width.toInt())
 
-        for (i in 0 until minOf(width.toInt(), samples.size / step)) {
+        // ✅ Fixed number of bars
+        val numBars = 60
+        val barWidth = (width / numBars) * 0.7f
+        val barSpacing = (width / numBars) * 0.3f
+        val step = maxOf(1, samples.size / numBars)
+
+        for (i in 0 until numBars) {
             val sampleIndex = i * step
-            if (sampleIndex < samples.size) {
-                val amplitude = samples[sampleIndex] * centerY
-                drawLine(
-                    color = color,
-                    start = Offset(i.toFloat(), centerY - amplitude),
-                    end = Offset(i.toFloat(), centerY + amplitude),
-                    strokeWidth = 2f
+            if (sampleIndex >= samples.size) break
+
+            // Calculate RMS for this bar
+            var sum = 0f
+            val windowSize = step.coerceAtMost(20)
+            for (j in 0 until windowSize) {
+                val idx = sampleIndex + j
+                if (idx < samples.size) {
+                    val sample = samples[idx].toFloat()
+                    sum += sample * sample
+                }
+            }
+            val rms = kotlin.math.sqrt(sum / windowSize)
+
+            // Normalize to 0-1
+            val normalizedAmplitude = (rms / Short.MAX_VALUE).coerceIn(0f, 1f)
+
+            // Bar height (minimum 5% for visual feedback)
+            val barHeight = height * normalizedAmplitude.coerceAtLeast(0.05f)
+
+            // X position
+            val x = i * (barWidth + barSpacing)
+
+            // Draw bar (rounded)
+            drawRoundRect(
+                color = color.copy(alpha = animatedAlpha),
+                topLeft = Offset(x, (height - barHeight) / 2),
+                size = androidx.compose.ui.geometry.Size(barWidth, barHeight),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidth / 2, barWidth / 2)
+            )
+        }
+    }
+}
+
+
+// ==================== 2️⃣ CONVERSATION SECTION ====================
+
+@Composable
+private fun ConversationSection(
+    viewModel: VoiceViewModel, // ✅ Nhận ViewModel thay vì List
+    modifier: Modifier = Modifier
+) {
+    // ✅ Collect StateFlow
+    val messages by viewModel.conversationMessages.collectAsState()
+    val listState = rememberLazyListState()
+
+    // ✅ Debug log
+    LaunchedEffect(messages.size) {
+        Log.d("VoiceScreen", "📊 Messages: ${messages.size}")
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size - 1)
+        }
+    }
+
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.background
+    ) {
+        if (messages.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.ChatBubbleOutline,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    )
+                    Text(
+                        "No conversation yet",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                    Text(
+                        "Start talking to begin",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                state = listState,
+                contentPadding = PaddingValues(Spacing.Medium),
+                verticalArrangement = Arrangement.spacedBy(Spacing.Small)
+            ) {
+                items(messages) { message ->
+                    ConversationMessageBubble(message)
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun ConversationMessageBubble(message: ConversationMessage) {
+    val isUser = message.speaker == Speaker.USER
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+    ) {
+        Card(
+            modifier = Modifier.widthIn(max = 280.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isUser) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.secondaryContainer
+                }
+            ),
+            shape = if (isUser) {
+                androidx.compose.foundation.shape.RoundedCornerShape(
+                    topStart = 16.dp,
+                    topEnd = 4.dp,
+                    bottomStart = 16.dp,
+                    bottomEnd = 16.dp
+                )
+            } else {
+                androidx.compose.foundation.shape.RoundedCornerShape(
+                    topStart = 4.dp,
+                    topEnd = 16.dp,
+                    bottomStart = 16.dp,
+                    bottomEnd = 16.dp
+                )
+            }
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        if (isUser) "🧑" else "🤖",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Text(
+                        if (isUser) "You" else "Agent",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isUser) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    message.text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isUser) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    }
                 )
             }
         }
     }
 }
 
-private fun formatTimestamp(timestamp: Long): String {
-    val now = System.currentTimeMillis()
-    val diff = now - timestamp
+// ==================== 3️⃣ CONTROLS SECTION ====================
 
-    return when {
-        diff < 60_000 -> "Just now"
-        diff < 3600_000 -> "${diff / 60_000}m ago"
-        else -> {
-            val date = java.util.Date(timestamp)
-            val format = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-            format.format(date)
+@Composable
+private fun ControlsSection(
+    state: VoiceUiState,
+    viewModel: VoiceViewModel,
+    modifier: Modifier = Modifier
+) {
+    var showModeDialog by remember { mutableStateOf(false) }
+    var textInput by remember { mutableStateOf("") }
+
+    if (showModeDialog) {
+        ConversationModeDialog(
+            currentMode = state.conversationMode,
+            onDismiss = { showModeDialog = false },
+            onModeSelected = {
+                viewModel.setConversationMode(it)
+                showModeDialog = false
+            }
+        )
+    }
+
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 3.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(Spacing.Medium),
+            verticalArrangement = Arrangement.spacedBy(Spacing.Small)
+        ) {
+            // Row 1: Mic & Mode buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+            ) {
+                // Mic button
+                FilledTonalButton(
+                    onClick = { viewModel.toggleMic() },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = if (state.micMuted) {
+                            MaterialTheme.extendedColors.warning
+                        } else {
+                            MaterialTheme.colorScheme.primaryContainer
+                        }
+                    )
+                ) {
+                    Icon(
+                        if (state.micMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                        contentDescription = null
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(if (state.micMuted) "Unmute" else "Mute")
+                }
+
+                // Mode button
+                OutlinedButton(
+                    onClick = { showModeDialog = true },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        when (state.conversationMode) {
+                            ConversationControlMode.FULL_DUPLEX -> "Duplex"
+                            ConversationControlMode.PTT -> "PTT"
+                        },
+                        maxLines = 1
+                    )
+                }
+            }
+
+            // Row 2: Text input
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Small),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = textInput,
+                    onValueChange = { textInput = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Type message...") },
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.medium
+                )
+
+                IconButton(
+                    onClick = {
+                        if (textInput.isNotBlank()) {
+                            viewModel.sendText(textInput)
+                            textInput = ""
+                        }
+                    },
+                    enabled = textInput.isNotBlank()
+                ) {
+                    Icon(Icons.Default.Send, contentDescription = "Send")
+                }
+            }
         }
     }
+}
+
+// ==================== MODE DIALOG ====================
+
+@Composable
+private fun ConversationModeDialog(
+    currentMode: ConversationControlMode,
+    onDismiss: () -> Unit,
+    onModeSelected: (ConversationControlMode) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(Icons.Default.Settings, contentDescription = null)
+        },
+        title = {
+            Text("Conversation Mode")
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ConversationControlMode.entries.forEach { mode ->
+                    Card(
+                        onClick = { onModeSelected(mode) },
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (currentMode == mode) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            }
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = currentMode == mode,
+                                onClick = null
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    when (mode) {
+                                        ConversationControlMode.FULL_DUPLEX -> "Full Duplex"
+                                        ConversationControlMode.PTT -> "Push-to-Talk"
+                                    },
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    when (mode) {
+                                        ConversationControlMode.FULL_DUPLEX -> "Both can talk anytime"
+                                        ConversationControlMode.PTT -> "Mic mutes when agent speaks"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
 }

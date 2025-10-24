@@ -8,20 +8,12 @@ import retrofit2.http.Query
 
 /**
  * ElevenLabs REST API interface.
- *
  * @see <a href="https://elevenlabs.io/docs/api-reference">API Reference</a>
  */
 interface ElevenLabsApi {
 
     /**
      * Lists conversational AI agents with pagination.
-     *
-     * @param pageSize Number of results per page (max 100)
-     * @param search Search query for agent names
-     * @param archived Filter archived agents
-     * @param sortDirection "asc" or "desc"
-     * @param sortBy Sort field (e.g., "created_at", "name")
-     * @param cursor Pagination cursor from previous response
      */
     @GET("v1/convai/agents")
     suspend fun listAgents(
@@ -35,7 +27,6 @@ interface ElevenLabsApi {
 
     /**
      * Retrieves detailed agent configuration.
-     *
      * @param agentId Unique agent identifier
      */
     @GET("v1/convai/agents/{agent_id}")

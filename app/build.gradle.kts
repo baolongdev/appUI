@@ -11,8 +11,8 @@ plugins {
 
 object AppVersion {
     const val major = 1
-    const val minor = 1
-    const val patch = 0
+    const val minor = 0
+    const val patch = 1
     const val code = major * 10000 + minor * 100 + patch
     const val name = "$major.$minor.$patch"
     const val dbVersion = 3
@@ -261,6 +261,10 @@ dependencies {
     implementation(libs.roomRuntime)
     implementation(libs.roomKtx)
     ksp(libs.roomCompiler)
+
+    // ✅ Rive Animation
+    implementation(libs.riveAndroid)
+    implementation(libs.startupRuntime)
 
     // Test
     testImplementation(libs.junit)

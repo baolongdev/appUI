@@ -8,6 +8,7 @@ import com.example.appui.core.audio.capture.AudioPcmCaptureManager
 import com.example.appui.core.audio.session.AudioSessionManager
 import com.example.appui.data.model.ConversationMessage
 import com.example.appui.data.model.Speaker
+import com.example.appui.data.repository.ElevenAgentsRepository
 import com.example.appui.domain.repository.ConversationRepository
 import com.example.appui.domain.repository.VoiceMode
 import com.example.appui.domain.repository.VoiceRepository
@@ -20,7 +21,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.json.JSONObject
-import java.io.File
 import javax.inject.Inject
 
 /**
@@ -30,7 +30,8 @@ import javax.inject.Inject
 class VoiceViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: VoiceRepository,
-    private val conversationRepository: ConversationRepository
+    private val conversationRepository: ConversationRepository,
+    private val agentsRepository: ElevenAgentsRepository
 ) : ViewModel() {
 
     private val audioSessionManager = AudioSessionManager(context)
@@ -39,10 +40,13 @@ class VoiceViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(VoiceUiState())
     val uiState: StateFlow<VoiceUiState> = _uiState.asStateFlow()
 
-    // Conversation tracking
-    val conversationMessages = mutableListOf<ConversationMessage>()
+    // ✅ FIXED: Use StateFlow thay vì mutableListOf để UI tự động update
+    private val _conversationMessages = MutableStateFlow<List<ConversationMessage>>(emptyList())
+    val conversationMessages: StateFlow<List<ConversationMessage>> = _conversationMessages.asStateFlow()
+
     private var conversationStartTime = 0L
     private var currentAgentId: String? = null
+    private var currentAgentName: String? = null
 
     init {
         observeRepositoryStates()
@@ -71,82 +75,110 @@ class VoiceViewModel @Inject constructor(
     /**
      * Initiates connection to voice agent.
      */
-    fun connect(agentId: String? = null, enablePcmCapture: Boolean = true) = viewModelScope.launch {
-        val currentStatus = _uiState.value.status
-
-        if (currentStatus in listOf(VoiceStatus.CONNECTED, VoiceStatus.CONNECTING)) {
-            Log.w(TAG, "Connection already active (status=$currentStatus)")
-            return@launch
-        }
-
-        Log.i(TAG, "Connecting to agent: ${agentId ?: "default"} with mode: ${_uiState.value.conversationMode}")
-
-        runCatching {
-            // Start conversation tracking
-            currentAgentId = agentId ?: "default"
-            conversationStartTime = System.currentTimeMillis()
-            conversationMessages.clear()
-
-            // Configure audio for voice chat
-            audioSessionManager.enterVoiceSession(
-                maxBoostDb = VOICE_SESSION_BOOST_DB,
-                preferSpeakerForMax = false
-            )
-
-            // Connect to ElevenLabs
-            repository.connect(agentId = agentId)
-
-            // Start PCM capture if enabled
-            if (enablePcmCapture) {
-                startPcmCapture()
+    fun connect(agentId: String? = null, agentName: String? = null, enablePcmCapture: Boolean = true) {
+        viewModelScope.launch {
+            val currentStatus = _uiState.value.status
+            if (currentStatus in listOf(VoiceStatus.CONNECTED, VoiceStatus.CONNECTING)) {
+                Log.w(TAG, "Connection already active: status=$currentStatus")
+                return@launch
             }
 
-            // Apply initial mic state based on mode
-            updateMicActiveState(VoiceMode.IDLE)
+            Log.i(TAG, "Connecting to agent: ${agentId ?: "default"} with mode: ${_uiState.value.conversationMode}")
 
-            Log.i(TAG, "Conversation tracking started")
-        }.onFailure { error ->
-            Log.e(TAG, "Connection failed", error)
-            audioSessionManager.exitVoiceSession()
-            stopPcmCapture()
+            runCatching {
+                currentAgentId = agentId ?: "default"
+                currentAgentName = agentName ?: fetchAgentName(agentId)
+
+                _uiState.update { it.copy(agentName = currentAgentName) }
+
+                Log.d(TAG, "Agent info: id=$currentAgentId, name=$currentAgentName")
+
+                // Start conversation tracking
+                conversationStartTime = System.currentTimeMillis()
+                _conversationMessages.value = emptyList() // ✅ Clear messages
+
+                // Configure audio for voice chat
+                audioSessionManager.enterVoiceSession(
+                    maxBoostDb = VOICE_SESSION_BOOST_DB,
+                    preferSpeakerForMax = false
+                )
+
+                repository.connect(agentId = agentId)
+
+                if (enablePcmCapture) {
+                    startPcmCapture()
+                }
+
+                updateMicActiveState(VoiceMode.IDLE)
+
+                Log.i(TAG, "Conversation tracking started")
+            }.onFailure { error ->
+                Log.e(TAG, "Connection failed", error)
+                audioSessionManager.exitVoiceSession()
+                stopPcmCapture()
+            }
+        }
+    }
+
+    /**
+     * Fetch agent name từ ElevenLabs API
+     */
+    private suspend fun fetchAgentName(agentId: String?): String {
+        return try {
+            if (agentId.isNullOrBlank()) {
+                val agents = agentsRepository.listAgents()
+                if (agents.isNotEmpty()) {
+                    agents.first().name
+                } else {
+                    "Default Agent"
+                }
+            } else {
+                val agentDetail = agentsRepository.getAgent(agentId)
+                agentDetail.name
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to fetch agent name for $agentId", e)
+            agentId?.takeIf { it.isNotBlank() } ?: "Unknown Agent"
         }
     }
 
     /**
      * Terminates active voice connection.
      */
-    fun disconnect() = viewModelScope.launch {
-        val currentStatus = _uiState.value.status
-
-        if (currentStatus == VoiceStatus.DISCONNECTED) {
-            Log.d(TAG, "Already disconnected")
-            return@launch
-        }
-
-        Log.i(TAG, "Disconnecting voice session")
-
-        runCatching {
-            stopPcmCapture()
-            repository.disconnect()
-            audioSessionManager.exitVoiceSession()
-
-            _uiState.update {
-                VoiceUiState(
-                    status = VoiceStatus.DISCONNECTED,
-                    mode = VoiceMode.IDLE,
-                    transcript = "",
-                    vad = 0f,
-                    micMuted = false,
-                    micPcmData = null,
-                    playbackPcmData = null,
-                    conversationMode = it.conversationMode,
-                    micActiveByMode = true
-                )
+    fun disconnect() {
+        viewModelScope.launch {
+            val currentStatus = _uiState.value.status
+            if (currentStatus == VoiceStatus.DISCONNECTED) {
+                Log.d(TAG, "Already disconnected")
+                return@launch
             }
 
-            Log.i(TAG, "Disconnection completed successfully")
-        }.onFailure { error ->
-            Log.e(TAG, "Disconnect failed", error)
+            Log.i(TAG, "Disconnecting voice session")
+
+            runCatching {
+                stopPcmCapture()
+                repository.disconnect()
+                audioSessionManager.exitVoiceSession()
+
+                _uiState.update {
+                    VoiceUiState(
+                        status = VoiceStatus.DISCONNECTED,
+                        mode = VoiceMode.IDLE,
+                        transcript = "",
+                        vad = 0f,
+                        micMuted = false,
+                        micPcmData = null,
+                        playbackPcmData = null,
+                        conversationMode = it.conversationMode,
+                        micActiveByMode = true,
+                        agentName = null
+                    )
+                }
+
+                Log.i(TAG, "Disconnection completed successfully")
+            }.onFailure { error ->
+                Log.e(TAG, "Disconnect failed", error)
+            }
         }
     }
 
@@ -155,30 +187,25 @@ class VoiceViewModel @Inject constructor(
      */
     suspend fun saveConversation(customTitle: String? = null): Boolean {
         return try {
-            if (conversationMessages.isEmpty()) {
+            val messages = _conversationMessages.value
+            if (messages.isEmpty()) {
                 Log.w(TAG, "No messages to save")
                 return false
             }
 
-            // Calculate duration
             val durationMs = System.currentTimeMillis() - conversationStartTime
-
-            // Get agent name from agentId (or use agentId as fallback)
-            val agentName = when (currentAgentId) {
-                "default" -> "Default Agent"
-                else -> currentAgentId // You can add a mapping here if needed
-            }
+            val agentName = currentAgentName ?: "Unknown Agent"
 
             conversationRepository.saveConversation(
                 agentId = currentAgentId ?: "unknown",
                 agentName = agentName,
-                messages = conversationMessages.toList(),
+                messages = messages,
                 durationMs = durationMs,
-                mode = _uiState.value.conversationMode.toString(), // ✅ Use conversationMode
+                mode = _uiState.value.conversationMode.toString(),
                 title = customTitle
             )
 
-            Log.i(TAG, "Conversation saved: ${conversationMessages.size} messages, duration: ${durationMs}ms")
+            Log.i(TAG, "Conversation saved: ${messages.size} messages, duration=${durationMs}ms, agentName=$agentName")
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save conversation", e)
@@ -190,91 +217,39 @@ class VoiceViewModel @Inject constructor(
      * Check if conversation has content to save.
      */
     fun hasConversationToSave(): Boolean {
-        return conversationMessages.isNotEmpty()
+        return _conversationMessages.value.isNotEmpty()
     }
 
     /**
      * Toggles manual microphone mute state.
      */
-    fun toggleMic() = viewModelScope.launch {
-        val newMutedState = !_uiState.value.micMuted
-        _uiState.update { it.copy(micMuted = newMutedState) }
-        applyEffectiveMicMute()
-        Log.i(TAG, "Manual mic mute: $newMutedState")
+    fun toggleMic() {
+        viewModelScope.launch {
+            val newMutedState = !_uiState.value.micMuted
+            _uiState.update { it.copy(micMuted = newMutedState) }
+            applyEffectiveMicMute()
+            Log.i(TAG, "Manual mic mute: $newMutedState")
+        }
     }
 
     /**
      * Applies effective mic mute state.
      */
-    private fun applyEffectiveMicMute() = viewModelScope.launch {
-        val effectiveMute = _uiState.value.isEffectiveMicMuted
-
-        runCatching {
-            repository.setMicMuted(effectiveMute)
-
-            if (effectiveMute) {
-                pcmCaptureManager.pauseMicCapture()
-            } else {
-                pcmCaptureManager.resumeMicCapture()
-            }
-
-            Log.d(TAG, "Effective mic mute applied: $effectiveMute")
-        }.onFailure { error ->
-            Log.e(TAG, "Failed to apply mic mute", error)
-        }
-    }
-
-    /**
-     * Updates mic active state based on conversation mode.
-     */
-    private fun updateMicActiveState(voiceMode: VoiceMode) {
-        val currentConvMode = _uiState.value.conversationMode
-
-        when (currentConvMode) {
-            ConversationControlMode.FULL_DUPLEX -> {
-                _uiState.update { it.copy(micActiveByMode = true) }
-            }
-            ConversationControlMode.PTT -> {
-                val micShouldBeActive = voiceMode != VoiceMode.SPEAKING
-                _uiState.update { it.copy(micActiveByMode = micShouldBeActive) }
-                Log.d(TAG, "PTT Mode: Voice=$voiceMode, Mic allowed=$micShouldBeActive")
+    private fun applyEffectiveMicMute() {
+        viewModelScope.launch {
+            val effectiveMute = _uiState.value.isEffectiveMicMuted
+            runCatching {
+                repository.setMicMuted(effectiveMute)
+                if (effectiveMute) {
+                    pcmCaptureManager.pauseMicCapture()
+                } else {
+                    pcmCaptureManager.resumeMicCapture()
+                }
+                Log.d(TAG, "Effective mic mute applied: $effectiveMute")
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to apply mic mute", error)
             }
         }
-
-        applyEffectiveMicMute()
-    }
-
-    /**
-     * Starts PCM capture.
-     */
-    fun startPcmCapture(recordToFile: Boolean = false) {
-        val micFile = if (recordToFile) {
-            File(context.cacheDir, "mic_${System.currentTimeMillis()}.wav")
-        } else null
-
-        val playbackFile = if (recordToFile) {
-            File(context.cacheDir, "playback_${System.currentTimeMillis()}.wav")
-        } else null
-
-        pcmCaptureManager.startMicCapture(
-            sampleRate = 16000,
-            recordToFile = micFile
-        )
-
-        pcmCaptureManager.startPlaybackCapture(
-            captureSize = 1024,
-            recordToFile = playbackFile
-        )
-
-        Log.i(TAG, "PCM capture started (recordToFile=$recordToFile)")
-    }
-
-    /**
-     * Stops PCM capture.
-     */
-    fun stopPcmCapture() {
-        pcmCaptureManager.stopAllCapture()
-        Log.i(TAG, "PCM capture stopped")
     }
 
     /**
@@ -282,34 +257,73 @@ class VoiceViewModel @Inject constructor(
      */
     fun sendText(text: String) {
         if (text.isBlank()) {
-            Log.w(TAG, "Ignoring blank text message")
+            Log.w(TAG, "Cannot send blank text")
             return
         }
 
-        runCatching {
-            repository.sendText(text)
+        if (_uiState.value.status != VoiceStatus.CONNECTED) {
+            Log.w(TAG, "Cannot send text: not connected")
+            return
+        }
 
-            // Add user message to conversation
-            conversationMessages.add(
-                ConversationMessage(
+        viewModelScope.launch {
+            runCatching {
+                repository.sendText(text)
+
+                // ✅ Add to StateFlow
+                val newMessage = ConversationMessage(
                     timestamp = System.currentTimeMillis(),
                     speaker = Speaker.USER,
                     text = text,
                     vadScore = 0f
                 )
-            )
+                _conversationMessages.value = _conversationMessages.value + newMessage
 
-            Log.d(TAG, "Text sent and logged: ${text.take(50)}...")
-        }.onFailure { error ->
-            Log.e(TAG, "Failed to send text", error)
+                Log.d(TAG, "Text sent: ${text.take(50)}${if (text.length > 50) "..." else ""} (total: ${_conversationMessages.value.size})")
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to send text", error)
+            }
         }
     }
 
-    /**
-     * Observes repository state flows.
-     */
+    // ==================== Private Methods ====================
+
+    private fun startPcmCapture() {
+        viewModelScope.launch {
+            runCatching {
+                pcmCaptureManager.startMicCapture()
+                pcmCaptureManager.startPlaybackCapture()
+                Log.d(TAG, "PCM capture started")
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to start PCM capture", error)
+            }
+        }
+    }
+
+    private fun stopPcmCapture() {
+        viewModelScope.launch {
+            runCatching {
+                pcmCaptureManager.stopAllCapture()
+                Log.d(TAG, "PCM capture stopped")
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to stop PCM capture", error)
+            }
+        }
+    }
+
+    private fun updateMicActiveState(voiceMode: VoiceMode) {
+        val newMicActiveByMode = when (_uiState.value.conversationMode) {
+            ConversationControlMode.FULL_DUPLEX -> true
+            ConversationControlMode.PTT -> voiceMode != VoiceMode.SPEAKING
+        }
+
+        _uiState.update { it.copy(micActiveByMode = newMicActiveByMode) }
+        applyEffectiveMicMute()
+
+        Log.d(TAG, "Mic active state updated: mode=$voiceMode, conversationMode=${_uiState.value.conversationMode}, micActiveByMode=$newMicActiveByMode")
+    }
+
     private fun observeRepositoryStates() {
-        // Connection status
         viewModelScope.launch {
             repository.status.collect { status ->
                 _uiState.update { it.copy(status = status) }
@@ -317,98 +331,84 @@ class VoiceViewModel @Inject constructor(
             }
         }
 
-        // Conversation mode - Update mic state
         viewModelScope.launch {
             repository.mode.collect { mode ->
                 _uiState.update { it.copy(mode = mode) }
                 updateMicActiveState(mode)
 
                 if (mode == VoiceMode.SPEAKING) {
-                    audioSessionManager.enterMediaLoudSession(
-                        maxBoostDb = MEDIA_SESSION_BOOST_DB
-                    )
+                    audioSessionManager.enterMediaLoudSession(maxBoostDb = MEDIA_SESSION_BOOST_DB)
                 }
             }
         }
 
-        // Transcript updates with proper parsing
+        // ✅ FIXED: Parse transcript and update StateFlow
         viewModelScope.launch {
             repository.transcript.collect { event ->
-                if (event.text.isNotBlank()) {
-                    _uiState.update { it.copy(transcript = event.text) }
+                val rawText = event.text
+                if (rawText.isBlank()) return@collect
 
-                    // ✅ Parse JSON events to extract actual conversation
-                    try {
-                        val jsonObject = JSONObject(event.text)
-                        val eventType = jsonObject.optString("type")
+                Log.d(TAG, "📥 Raw: ${rawText.take(150)}")
 
-                        when (eventType) {
-                            "user_transcript" -> {
-                                val userTranscript = jsonObject
-                                    .optJSONObject("user_transcription_event")
-                                    ?.optString("user_transcript", "")
+                _uiState.update { it.copy(transcript = rawText) }
 
-                                if (!userTranscript.isNullOrBlank()) {
-                                    conversationMessages.add(
-                                        ConversationMessage(
-                                            timestamp = System.currentTimeMillis(),
-                                            speaker = Speaker.USER,
-                                            text = userTranscript,
-                                            vadScore = _uiState.value.vad
-                                        )
-                                    )
-                                    Log.d(TAG, "USER: $userTranscript")
-                                }
-                            }
+                try {
+                    val jsonObject = JSONObject(rawText)
+                    val eventType = jsonObject.optString("type", "")
 
-                            "agent_response" -> {
-                                val agentResponse = jsonObject
-                                    .optJSONObject("agent_response_event")
-                                    ?.optString("agent_response", "")
+                    when (eventType) {
+                        "user_transcript" -> {
+                            val userTranscript = jsonObject
+                                .optJSONObject("user_transcription_event")
+                                ?.optString("user_transcript", "")
 
-                                if (!agentResponse.isNullOrBlank()) {
-                                    conversationMessages.add(
-                                        ConversationMessage(
-                                            timestamp = System.currentTimeMillis(),
-                                            speaker = Speaker.AGENT,
-                                            text = agentResponse.trim(),
-                                            vadScore = 0f
-                                        )
-                                    )
-                                    Log.d(TAG, "AGENT: $agentResponse")
-                                }
-                            }
+                            if (!userTranscript.isNullOrBlank()) {
+                                val newMessage = ConversationMessage(
+                                    timestamp = System.currentTimeMillis(),
+                                    speaker = Speaker.USER,
+                                    text = userTranscript,
+                                    vadScore = _uiState.value.vad
+                                )
 
-                            // Ignore other events: vad_score, ping, etc.
-                            else -> {
-                                Log.v(TAG, "Ignored event: $eventType")
+                                // ✅ Update StateFlow
+                                _conversationMessages.value = _conversationMessages.value + newMessage
+
+                                Log.d(TAG, "👤 USER: $userTranscript (total: ${_conversationMessages.value.size})")
                             }
                         }
-                    } catch (e: Exception) {
-                        // Fallback: treat as plain text
-                        Log.w(TAG, "Failed to parse event, using raw text", e)
 
-                        val speaker = if (_uiState.value.mode == VoiceMode.SPEAKING) {
-                            Speaker.AGENT
-                        } else {
-                            Speaker.USER
+                        "agent_response" -> {
+                            val agentResponse = jsonObject
+                                .optJSONObject("agent_response_event")
+                                ?.optString("agent_response", "")
+
+                            if (!agentResponse.isNullOrBlank()) {
+                                val newMessage = ConversationMessage(
+                                    timestamp = System.currentTimeMillis(),
+                                    speaker = Speaker.AGENT,
+                                    text = agentResponse.trim(),
+                                    vadScore = 0f
+                                )
+
+                                // ✅ Update StateFlow
+                                _conversationMessages.value = _conversationMessages.value + newMessage
+
+                                Log.d(TAG, "🤖 AGENT: $agentResponse (total: ${_conversationMessages.value.size})")
+                            }
                         }
 
-                        conversationMessages.add(
-                            ConversationMessage(
-                                timestamp = System.currentTimeMillis(),
-                                speaker = speaker,
-                                text = event.text,
-                                vadScore = _uiState.value.vad
-                            )
-                        )
+                        else -> {
+                            if (eventType.isNotEmpty()) {
+                                Log.v(TAG, "ℹ️ Event: $eventType")
+                            }
+                        }
                     }
+                } catch (e: Exception) {
+                    Log.w(TAG, "⚠️ Parse failed", e)
                 }
             }
         }
 
-
-        // VAD score
         viewModelScope.launch {
             repository.vadScore.collect { score ->
                 _uiState.update { it.copy(vad = score) }
@@ -416,9 +416,6 @@ class VoiceViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Observes PCM data flows.
-     */
     private fun observePcmData() {
         viewModelScope.launch {
             pcmCaptureManager.micPcmFlow.collect { pcmData ->
@@ -436,7 +433,6 @@ class VoiceViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         Log.d(TAG, "VoiceViewModel clearing")
-
         pcmCaptureManager.stopAllCapture()
         audioSessionManager.exitVoiceSession()
 
@@ -455,7 +451,7 @@ class VoiceViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "VoiceViewModel"
-        private const val VOICE_SESSION_BOOST_DB = 0
-        private const val MEDIA_SESSION_BOOST_DB = 0
+        private const val VOICE_SESSION_BOOST_DB = 24
+        private const val MEDIA_SESSION_BOOST_DB = 24
     }
 }

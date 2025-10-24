@@ -5,7 +5,6 @@ package com.example.appui.ui.screen.agents
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -27,7 +26,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.example.appui.data.remote.elevenlabs.models.AgentSummary
+import com.example.appui.data.remote.elevenlabs.models.AgentSummaryResponseModel
 import com.example.appui.data.remote.elevenlabs.models.GetAgentDetailResponse
 import com.example.appui.ui.theme.extendedColors
 import java.time.Instant
@@ -36,7 +35,8 @@ import java.time.ZoneId
 @Composable
 fun AgentsScreen(
     vm: AgentsViewModel = hiltViewModel(),
-    onPlayAgent: (String) -> Unit = {},
+    onPlayAgent: (agentId: String, agentName: String) -> Unit, // ✅ FIXED signature
+    onAvatarView: (agentId: String, agentName: String) -> Unit, // ✅ THÊM
     onNavigateBack: () -> Unit = {}
 ) {
     val ui by vm.ui.collectAsState()
@@ -64,7 +64,6 @@ fun AgentsScreen(
                     )
                     .padding(horizontal = 20.dp, vertical = 16.dp)
             ) {
-                // Title Row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -143,7 +142,6 @@ fun AgentsScreen(
 
                 Spacer(Modifier.height(16.dp))
 
-                // Modern Search Bar
                 TextField(
                     value = search,
                     onValueChange = { search = it },
@@ -196,12 +194,14 @@ fun AgentsScreen(
                 ui.selected == null -> ModernAgentsTable(
                     agents = ui.agents,
                     onRowClick = vm::loadDetail,
-                    onPlay = onPlayAgent
+                    onPlay = { agentId, agentName -> onPlayAgent(agentId, agentName) }, // ✅ FIXED
+                    onAvatarView = { agentId, agentName -> onAvatarView(agentId, agentName) } // ✅ THÊM
                 )
                 else -> ModernAgentDetail(
                     data = ui.selected!!,
                     onBack = vm::clearDetail,
-                    onPlay = { onPlayAgent(ui.selected!!.agentId) }
+                    onPlay = { onPlayAgent(ui.selected!!.agentId, ui.selected!!.name) }, // ✅ FIXED
+                    onAvatarView = { onAvatarView(ui.selected!!.agentId, ui.selected!!.name) } // ✅ THÊM
                 )
             }
         }
@@ -284,9 +284,10 @@ private fun ModernErrorView(error: String) {
 // ============= MODERN AGENTS TABLE =============
 @Composable
 private fun ModernAgentsTable(
-    agents: List<AgentSummary>,
+    agents: List<AgentSummaryResponseModel>, // ✅ FIXED type
     onRowClick: (String) -> Unit,
-    onPlay: (String) -> Unit
+    onPlay: (String, String) -> Unit, // ✅ FIXED signature
+    onAvatarView: (String, String) -> Unit // ✅ THÊM
 ) {
     if (agents.isEmpty()) {
         Box(
@@ -336,7 +337,8 @@ private fun ModernAgentsTable(
             ModernAgentCard(
                 agent = agent,
                 onClick = { onRowClick(agent.agentId) },
-                onPlay = { onPlay(agent.agentId) }
+                onPlay = { onPlay(agent.agentId, agent.name) }, // ✅ FIXED
+                onAvatarView = { onAvatarView(agent.agentId, agent.name) } // ✅ THÊM
             )
         }
     }
@@ -345,9 +347,10 @@ private fun ModernAgentsTable(
 // ============= MODERN AGENT CARD =============
 @Composable
 private fun ModernAgentCard(
-    agent: AgentSummary,
+    agent: AgentSummaryResponseModel, // ✅ FIXED type
     onClick: () -> Unit,
-    onPlay: () -> Unit
+    onPlay: () -> Unit,
+    onAvatarView: () -> Unit // ✅ THÊM
 ) {
     val (lastLabel, recent) = remember(agent.lastCallTimeUnixSecs) {
         lastCallLabel(agent.lastCallTimeUnixSecs)
@@ -373,7 +376,6 @@ private fun ModernAgentCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Avatar with status
                 Box {
                     Surface(
                         shape = CircleShape,
@@ -390,7 +392,6 @@ private fun ModernAgentCard(
                         }
                     }
 
-                    // Status indicator
                     Box(
                         modifier = Modifier
                             .size(14.dp)
@@ -399,10 +400,6 @@ private fun ModernAgentCard(
                             .background(
                                 if (recent) successColor
                                 else MaterialTheme.colorScheme.surfaceVariant
-                            )
-                            .then(
-                                if (recent) Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.3f))
-                                else Modifier
                             )
                     )
                 }
@@ -467,8 +464,19 @@ private fun ModernAgentCard(
                 }
             }
 
-            // Action Buttons
+            // ✅ Action Buttons
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // ✅ Avatar Button
+                FilledTonalIconButton(
+                    onClick = onAvatarView,
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    )
+                ) {
+                    Icon(Icons.Filled.Face, "Avatar")
+                }
+
+                // Play Button
                 FilledTonalButton(
                     onClick = onPlay,
                     colors = ButtonDefaults.filledTonalButtonColors(
@@ -476,11 +484,7 @@ private fun ModernAgentCard(
                         contentColor = MaterialTheme.colorScheme.surface
                     )
                 ) {
-                    Icon(
-                        Icons.Default.PlayArrow,
-                        null,
-                        Modifier.size(18.dp)
-                    )
+                    Icon(Icons.Default.PlayArrow, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Play")
                 }
@@ -498,7 +502,8 @@ private fun ModernAgentCard(
 private fun ModernAgentDetail(
     data: GetAgentDetailResponse,
     onBack: () -> Unit,
-    onPlay: () -> Unit
+    onPlay: () -> Unit,
+    onAvatarView: () -> Unit // ✅ THÊM
 ) {
     val clipboard = LocalClipboardManager.current
     val successColor = MaterialTheme.extendedColors.success
@@ -506,7 +511,6 @@ private fun ModernAgentDetail(
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Back button
         item {
             TextButton(onClick = onBack) {
                 Icon(Icons.Default.ArrowBack, null)
@@ -515,7 +519,6 @@ private fun ModernAgentDetail(
             }
         }
 
-        // Agent header card
         item {
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(20.dp)) {
@@ -575,7 +578,6 @@ private fun ModernAgentDetail(
 
                     Spacer(Modifier.height(16.dp))
 
-                    // Agent ID
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -610,11 +612,22 @@ private fun ModernAgentDetail(
 
                     Spacer(Modifier.height(16.dp))
 
-                    // Action Buttons
+                    // ✅ Action Buttons với Avatar
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        // Avatar Button
+                        OutlinedButton(
+                            onClick = onAvatarView,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Outlined.Face, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Avatar")
+                        }
+
+                        // Play Button
                         Button(
                             onClick = onPlay,
                             modifier = Modifier.weight(1f),
@@ -624,14 +637,14 @@ private fun ModernAgentDetail(
                         ) {
                             Icon(Icons.Outlined.RecordVoiceOver, null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Play Agent")
+                            Text("Play")
                         }
                     }
                 }
             }
         }
 
-        // Configuration sections
+        // Configuration sections (giữ nguyên như code gốc)
         item {
             ModernConfigSection(
                 icon = Icons.Outlined.Audiotrack,
@@ -688,9 +701,7 @@ private fun ModernAgentDetail(
                 color = MaterialTheme.colorScheme.primary
             ) {
                 val agent = data.conversationConfig?.agent
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     agent?.firstMessage?.let {
                         ConfigDetail("First Message", it)
                     }
@@ -703,7 +714,7 @@ private fun ModernAgentDetail(
     }
 }
 
-// ============= MODERN CONFIG SECTION =============
+// ============= HELPER COMPOSABLES (unchanged) =============
 @Composable
 private fun ModernConfigSection(
     icon: ImageVector,
@@ -713,7 +724,6 @@ private fun ModernConfigSection(
 ) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp)) {
-            // Section Header
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -724,49 +734,28 @@ private fun ModernConfigSection(
                     modifier = Modifier.size(40.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            icon,
-                            null,
-                            modifier = Modifier.size(20.dp),
-                            tint = color
-                        )
+                        Icon(icon, null, modifier = Modifier.size(20.dp), tint = color)
                     }
                 }
-
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
-
             Spacer(Modifier.height(16.dp))
-
-            // Content
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 shape = MaterialTheme.shapes.medium
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    content = content
-                )
+                Column(modifier = Modifier.padding(16.dp), content = content)
             }
         }
     }
 }
 
-// ============= CONFIG GRID =============
 @Composable
 private fun ConfigGrid(content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        content = content
-    )
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
 }
 
-// ============= CONFIG ITEM =============
 @Composable
 private fun ConfigItem(label: String, value: String?) {
     Row(
@@ -780,11 +769,7 @@ private fun ConfigItem(label: String, value: String?) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Medium
         )
-
-        Surface(
-            shape = MaterialTheme.shapes.small,
-            color = MaterialTheme.colorScheme.surface
-        ) {
+        Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surface) {
             Text(
                 value ?: "-",
                 style = MaterialTheme.typography.bodyMedium,
@@ -795,7 +780,6 @@ private fun ConfigItem(label: String, value: String?) {
     }
 }
 
-// ============= CONFIG DETAIL =============
 @Composable
 private fun ConfigDetail(label: String, value: String) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -805,22 +789,16 @@ private fun ConfigDetail(label: String, value: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Bold
         )
-
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = MaterialTheme.colorScheme.surface,
             shape = MaterialTheme.shapes.small
         ) {
-            Text(
-                value,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(12.dp)
-            )
+            Text(value, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(12.dp))
         }
     }
 }
 
-// ============= TIME UTILS (unchanged but included for completeness) =============
 private fun lastCallLabel(unixSecs: Long?): Pair<String, Boolean> {
     if (unixSecs == null || unixSecs <= 0L) return "Never" to false
     val now = Instant.now().epochSecond

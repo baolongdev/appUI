@@ -29,6 +29,7 @@ fun AgentCard(
     isFavorite: Boolean,
     onClick: () -> Unit,
     onPlay: () -> Unit,
+    onAvatarView: () -> Unit, // ✅ THÊM
     onToggleFavorite: () -> Unit
 ) {
     val (timeLabel, isRecent) = remember(agent.lastCallTimeUnixSecs) {
@@ -43,7 +44,7 @@ fun AgentCard(
         )
     ) {
         Column(Modifier.padding(16.dp)) {
-            // Header
+            // Header (giữ nguyên)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -54,7 +55,6 @@ fun AgentCard(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f)
                 ) {
-                    // Avatar with status
                     Box {
                         Surface(
                             shape = CircleShape,
@@ -71,7 +71,6 @@ fun AgentCard(
                             }
                         }
 
-                        // Status dot
                         if (isRecent) {
                             Box(
                                 modifier = Modifier
@@ -109,7 +108,7 @@ fun AgentCard(
 
             Spacer(Modifier.height(12.dp))
 
-            // Agent ID
+            // Agent ID (giữ nguyên)
             Surface(
                 shape = MaterialTheme.shapes.small,
                 color = MaterialTheme.colorScheme.surfaceVariant
@@ -126,7 +125,7 @@ fun AgentCard(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Spacer(Modifier.height(12.dp))
 
-            // Footer
+            // ✅ FOOTER - UPDATE với 2 nút
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -149,21 +148,42 @@ fun AgentCard(
                     )
                 }
 
-                Button(
-                    onClick = onPlay,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.extendedColors.success
-                    ),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    Icon(Icons.Filled.PlayArrow, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Play")
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // Avatar Button
+                    FilledTonalButton(
+                        onClick = onAvatarView,
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                        ),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Face,
+                            null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+
+                    // Play Button
+                    Button(
+                        onClick = onPlay,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.extendedColors.success
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Icon(Icons.Filled.PlayArrow, null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Play", style = MaterialTheme.typography.labelMedium)
+                    }
                 }
             }
         }
     }
 }
+
 
 /**
  * Agent List Item - List View
@@ -174,6 +194,7 @@ fun AgentListItem(
     isFavorite: Boolean,
     onClick: () -> Unit,
     onPlay: () -> Unit,
+    onAvatarView: () -> Unit, // ✅ THÊM
     onToggleFavorite: () -> Unit
 ) {
     val (timeLabel, isRecent) = remember(agent.lastCallTimeUnixSecs) {
@@ -193,7 +214,6 @@ fun AgentListItem(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Avatar
                 Box {
                     Surface(
                         shape = CircleShape,
@@ -254,6 +274,18 @@ fun AgentListItem(
                     )
                 }
 
+                // ✅ Avatar Button
+                FilledTonalIconButton(
+                    onClick = onAvatarView,
+                    modifier = Modifier.size(36.dp),
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    )
+                ) {
+                    Icon(Icons.Filled.Face, null, Modifier.size(18.dp))
+                }
+
+                // Play Button
                 FilledTonalIconButton(
                     onClick = onPlay,
                     modifier = Modifier.size(36.dp),

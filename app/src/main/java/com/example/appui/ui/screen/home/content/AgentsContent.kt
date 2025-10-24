@@ -2,6 +2,7 @@
 
 package com.example.appui.ui.screen.home.content
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -34,9 +35,6 @@ import kotlinx.coroutines.flow.map
 import java.time.Instant
 import java.util.Locale
 
-/**
- * Agents Content - Optimized & Modern UI
- */
 @Composable
 fun MyAgentsContent(
     agents: List<AgentSummaryResponseModel>,
@@ -45,22 +43,20 @@ fun MyAgentsContent(
     detailError: String?,
     onOpenAgent: (String) -> Unit,
     onPlayAgent: (String) -> Unit,
+    onAvatarView: (String, String?) -> Unit, // ✅ FIXED: (agentId, agentName)
     onToggleFavorite: (String, Boolean) -> Unit,
     onCloseDetail: () -> Unit
 ) {
-    // State
     var searchText by rememberSaveable { mutableStateOf("") }
     var debouncedQuery by rememberSaveable { mutableStateOf("") }
     var filterTab by rememberSaveable { mutableStateOf(AgentFilterTab.ALL) }
     var sortBy by rememberSaveable { mutableStateOf(AgentSortBy.NEWEST) }
     var viewMode by rememberSaveable { mutableStateOf(AgentViewMode.CARD) }
 
-    // Favorites (local state)
     val favoritesLocal = rememberSaveable(
         saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() })
     ) { mutableStateListOf<String>() }
 
-    // Debounce search (300ms)
     LaunchedEffect(searchText) {
         snapshotFlow { searchText }
             .map { it.trim() }
@@ -69,7 +65,6 @@ fun MyAgentsContent(
             .collect { debouncedQuery = it }
     }
 
-    // Filtered & sorted agents
     val filteredAgents by remember {
         derivedStateOf {
             agents
@@ -105,7 +100,6 @@ fun MyAgentsContent(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // Main Content
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -129,6 +123,10 @@ fun MyAgentsContent(
                 favorites = favoritesLocal,
                 onOpenAgent = onOpenAgent,
                 onPlayAgent = onPlayAgent,
+                onAvatarView = { agentId, agentName -> // ✅ FIXED: Pass both
+                    Log.d("MyAgentsContent", "🎭 Avatar: id=$agentId, name=$agentName")
+                    onAvatarView(agentId, agentName)
+                },
                 onToggleFavorite = { id, isFavorite ->
                     if (isFavorite) favoritesLocal.add(id) else favoritesLocal.remove(id)
                     onToggleFavorite(id, isFavorite)
@@ -136,7 +134,6 @@ fun MyAgentsContent(
             )
         }
 
-        // Scrim Overlay
         AnimatedVisibility(
             visible = isPanelOpen,
             enter = fadeIn(tween(180)),
@@ -154,7 +151,6 @@ fun MyAgentsContent(
             )
         }
 
-        // Detail Panel (Right Sidebar)
         val panelWidth = 420.dp
         val density = LocalDensity.current
 
@@ -189,7 +185,6 @@ fun MyAgentsContent(
     }
 }
 
-// Helper function
 private fun isWithinLast7Days(unixSecs: Long?): Boolean {
     if (unixSecs == null || unixSecs <= 0) return false
     val delta = Instant.now().epochSecond - unixSecs

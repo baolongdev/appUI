@@ -1,6 +1,7 @@
 package com.example.appui.ui.screen.voice
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -17,6 +18,7 @@ import com.example.appui.ui.theme.extendedColors
 @Composable
 fun SaveConversationDialog(
     messageCount: Int,
+    agentName: String?, // ✅ FIXED: Thêm parameter
     onDismiss: () -> Unit,
     onSave: (String?) -> Unit,
     onDiscard: () -> Unit
@@ -28,7 +30,7 @@ fun SaveConversationDialog(
         onDismissRequest = onDismiss,
         icon = {
             Surface(
-                shape = androidx.compose.foundation.shape.CircleShape,
+                shape = CircleShape,
                 color = MaterialTheme.extendedColors.success.copy(alpha = 0.2f),
                 modifier = Modifier.size(56.dp)
             ) {
@@ -51,6 +53,30 @@ fun SaveConversationDialog(
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                // ✅ FIXED: Hiển thị Agent Name
+                if (!agentName.isNullOrBlank()) {
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("🤖", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                agentName,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
+
                 Surface(
                     shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.surfaceVariant

@@ -28,9 +28,11 @@ elevenlabsAndroid = "0.2.0" # Kiểm tra version mới nhất
 
 # Other
 coroutines = "1.9.0"
+riveAndroid = "9.6.5"
 roomCompiler = "2.6.1"
 roomRuntime = "2.6.1"
 roomKtx = "2.6.1"
+startupRuntime = "1.1.1"
 workManager = "2.9.1"
 datastore = "1.1.1"
 securityCrypto = "1.1.0-alpha06"
@@ -55,9 +57,11 @@ activityCompose = { group = "androidx.activity", name = "activity-compose", vers
 navigationCompose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
 lifecycleRuntimeKtx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
 lifecycleViewmodelCompose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycleRuntimeKtx" }
+riveAndroid = { module = "app.rive:rive-android", version.ref = "riveAndroid" }
 roomCompiler = { module = "androidx.room:room-compiler", version.ref = "roomCompiler" }
 roomKtx = { module = "androidx.room:room-ktx", version.ref = "roomKtx" }
 roomRuntime = { module = "androidx.room:room-runtime", version.ref = "roomRuntime" }
+startupRuntime = { module = "androidx.startup:startup-runtime", version.ref = "startupRuntime" }
 uiTooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 uiToolingPreview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 

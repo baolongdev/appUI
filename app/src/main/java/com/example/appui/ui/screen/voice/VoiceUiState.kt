@@ -4,17 +4,6 @@ import com.example.appui.core.audio.capture.PcmData
 import com.example.appui.domain.repository.VoiceMode
 import com.example.appui.domain.repository.VoiceStatus
 
-/**
- * Conversation control mode.
- */
-enum class ConversationControlMode {
-    FULL_DUPLEX,  // Mic always active (default)
-    PTT           // Push-to-talk: mic only active after agent finishes speaking
-}
-
-/**
- * UI state for VoiceScreen with PCM data support and conversation mode control.
- */
 data class VoiceUiState(
     val status: VoiceStatus = VoiceStatus.DISCONNECTED,
     val mode: VoiceMode = VoiceMode.IDLE,
@@ -26,11 +15,29 @@ data class VoiceUiState(
 
     // Conversation control mode
     val conversationMode: ConversationControlMode = ConversationControlMode.FULL_DUPLEX,
-    val micActiveByMode: Boolean = true // Whether mic is allowed to be active based on conversation mode
-)
+    val micActiveByMode: Boolean = true,
+
+    // ✅ THÊM: Agent name
+    val agentName: String? = null
+) {
+    /**
+     * Effective mic mute state = manual mute OR not active by mode
+     */
+    val isEffectiveMicMuted: Boolean
+        get() = micMuted || !micActiveByMode
+}
 
 /**
- * Extension to check if mic should be truly muted.
+ * Conversation control modes
  */
-val VoiceUiState.isEffectiveMicMuted: Boolean
-    get() = micMuted || !micActiveByMode
+enum class ConversationControlMode {
+    /**
+     * Full duplex: both mic and speaker active simultaneously
+     */
+    FULL_DUPLEX,
+
+    /**
+     * Push-to-talk: mic active only when agent is not speaking
+     */
+    PTT
+}

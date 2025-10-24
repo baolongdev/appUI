@@ -17,12 +17,13 @@ import com.example.appui.utils.showToast
 import dagger.hilt.android.AndroidEntryPoint
 
 /**
- * MainActivity với Kiosk Mode & Immersive UI
+ * MainActivity với Kiosk Mode & Lifecycle Auto-Management
  *
  * Features:
  * - Auto-enter kiosk mode on start
+ * - Auto disable/enable on pause/resume
  * - Two-finger double-tap to toggle kiosk
- * - Volume key combo fallback (Volume Up + Volume Down)
+ * - Volume key combo fallback
  * - Immersive fullscreen mode
  * - Back button prevention in kiosk mode
  */
@@ -42,6 +43,9 @@ class MainActivity : ComponentActivity() {
 
         // Initialize managers
         initializeManagers()
+
+        // ✅ Register lifecycle observer for auto pause/resume
+        lifecycle.addObserver(kioskManager)
 
         // Setup window
         setupWindow()
@@ -90,6 +94,12 @@ class MainActivity : ComponentActivity() {
         return super.onKeyDown(keyCode, event)
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        // ✅ Cleanup lifecycle observer
+        lifecycle.removeObserver(kioskManager)
+    }
+
     // ==================== Private Methods ====================
 
     private fun initializeManagers() {
@@ -106,9 +116,7 @@ class MainActivity : ComponentActivity() {
         )
 
         immersiveController = ImmersiveModeController(window)
-
         twoFingerTapDetector = TwoFingerDoubleTapDetector()
-
         volumeComboDetector = VolumeKeyComboDetector()
     }
 

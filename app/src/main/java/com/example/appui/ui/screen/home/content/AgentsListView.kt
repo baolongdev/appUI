@@ -1,5 +1,6 @@
 package com.example.appui.ui.screen.home.content
 
+import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -25,6 +26,7 @@ fun AgentsListView(
     favorites: List<String>,
     onOpenAgent: (String) -> Unit,
     onPlayAgent: (String) -> Unit,
+    onAvatarView: (String, String?) -> Unit, // ✅ FIXED: (agentId, agentName)
     onToggleFavorite: (String, Boolean) -> Unit
 ) {
     if (agents.isEmpty()) {
@@ -45,8 +47,17 @@ fun AgentsListView(
                         agent = agent,
                         isFavorite = favorites.contains(agent.agentId),
                         onClick = { onOpenAgent(agent.agentId) },
-                        onPlay = { onPlayAgent(agent.agentId) },
-                        onToggleFavorite = { onToggleFavorite(agent.agentId, !favorites.contains(agent.agentId)) }
+                        onPlay = {
+                            Log.d("AgentsListView", "▶️ Play: ${agent.name}")
+                            onPlayAgent(agent.agentId)
+                        },
+                        onAvatarView = { // ✅ FIXED: Pass both agentId and name
+                            Log.d("AgentsListView", "🎭 Avatar: ${agent.name} (${agent.agentId})")
+                            onAvatarView(agent.agentId, agent.name)
+                        },
+                        onToggleFavorite = {
+                            onToggleFavorite(agent.agentId, !favorites.contains(agent.agentId))
+                        }
                     )
                 }
             }
@@ -61,8 +72,17 @@ fun AgentsListView(
                         agent = agent,
                         isFavorite = favorites.contains(agent.agentId),
                         onClick = { onOpenAgent(agent.agentId) },
-                        onPlay = { onPlayAgent(agent.agentId) },
-                        onToggleFavorite = { onToggleFavorite(agent.agentId, !favorites.contains(agent.agentId)) }
+                        onPlay = {
+                            Log.d("AgentsListView", "▶️ Play: ${agent.name}")
+                            onPlayAgent(agent.agentId)
+                        },
+                        onAvatarView = { // ✅ FIXED: Pass both agentId and name
+                            Log.d("AgentsListView", "🎭 Avatar: ${agent.name} (${agent.agentId})")
+                            onAvatarView(agent.agentId, agent.name)
+                        },
+                        onToggleFavorite = {
+                            onToggleFavorite(agent.agentId, !favorites.contains(agent.agentId))
+                        }
                     )
                 }
             }

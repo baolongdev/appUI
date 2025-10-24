@@ -198,6 +198,8 @@ fun UpdateScreen(
                         release = release,
                         currentVersionCode = uiState.currentVersionCode,
                         isDownloading = uiState.isDownloading,
+                        currentDownloadUrl = uiState.currentDownloadUrl,
+                        downloadProgress = uiState.downloadProgress,
                         onDownload = { asset ->
                             if (!viewModel.hasInstallPermission()) {
                                 pendingDownloadUrl = asset.downloadUrl
@@ -208,7 +210,8 @@ fun UpdateScreen(
                             } else {
                                 viewModel.downloadAndInstall(asset.downloadUrl)
                             }
-                        }
+                        },
+                        onCancelDownload = { viewModel.cancelDownload() } // ✅ Add callback
                     )
                 }
             }
@@ -637,12 +640,17 @@ private fun ReleaseCard(
     release: AppRelease,
     currentVersionCode: Int,
     isDownloading: Boolean,
-    onDownload: (ReleaseAsset) -> Unit
+    currentDownloadUrl: String?,
+    downloadProgress: DownloadProgress,
+    onDownload: (ReleaseAsset) -> Unit,
+    onCancelDownload: () -> Unit // ✅ Add callback
 ) {
     var isExpanded by remember { mutableStateOf(false) }
     val versionCode = parseVersionCode(release.tagName)
     val isCurrent = versionCode == currentVersionCode
     val apkAsset = release.assets.firstOrNull { it.name.endsWith(".apk") }
+
+    val isThisReleaseDownloading = isDownloading && currentDownloadUrl == apkAsset?.downloadUrl
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -716,39 +724,154 @@ private fun ReleaseCard(
                 }
             }
 
-            // Download
+            // Download Section
             apkAsset?.let { apk ->
                 HorizontalDivider()
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            Icons.Outlined.InsertDriveFile,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            "%.1f MB".format(Locale.US, apk.size / (1024f * 1024f)),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
+                // ✅ Show download progress if downloading
+                if (isThisReleaseDownloading) {
+                    when (downloadProgress) {
+                        is DownloadProgress.Downloading -> {
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                // Progress header
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        "Đang tải xuống",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        "${(downloadProgress.progress * 100).toInt()}%",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
 
-                    if (!isCurrent) {
-                        FilledTonalButton(
-                            onClick = { onDownload(apk) },
-                            enabled = !isDownloading
+                                // Progress bar
+                                LinearProgressIndicator(
+                                    progress = { downloadProgress.progress },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .clip(RoundedCornerShape(3.dp)),
+                                )
+
+                                // ✅ Cancel button
+                                OutlinedButton(
+                                    onClick = onCancelDownload,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.Close,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Hủy tải")
+                                }
+                            }
+                        }
+                        is DownloadProgress.Completed -> {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.extendedColors.success.copy(alpha = 0.15f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Filled.CheckCircle,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.extendedColors.success,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        "Hoàn tất!",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.extendedColors.success
+                                    )
+                                }
+                            }
+                        }
+                        is DownloadProgress.Failed -> {
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Outlined.ErrorOutline,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Text(
+                                            "Lỗi tải xuống",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                        )
+                                    }
+                                }
+
+                                // ✅ Retry button
+                                FilledTonalButton(
+                                    onClick = { onDownload(apk) },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Outlined.Refresh, null, Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Thử lại")
+                                }
+                            }
+                        }
+                        else -> {}
+                    }
+                } else {
+                    // Normal state
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Icon(Icons.Outlined.Download, null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(if (isDownloading) "Đang tải..." else "Tải về")
+                            Icon(
+                                Icons.Outlined.InsertDriveFile,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                "%.1f MB".format(Locale.US, apk.size / (1024f * 1024f)),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
+                        if (!isCurrent) {
+                            FilledTonalButton(
+                                onClick = { onDownload(apk) },
+                                enabled = !isDownloading
+                            ) {
+                                Icon(Icons.Outlined.Download, null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(if (isDownloading) "Đang tải..." else "Tải về")
+                            }
                         }
                     }
                 }
