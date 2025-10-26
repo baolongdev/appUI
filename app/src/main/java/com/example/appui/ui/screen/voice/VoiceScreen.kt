@@ -8,10 +8,11 @@ import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -26,9 +27,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.appui.core.audio.capture.PcmData
@@ -52,7 +55,7 @@ fun VoiceScreen(
     onNavigateBack: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsState()
-    val messages by viewModel.conversationMessages.collectAsState() // ✅ Collect StateFlow
+    val messages by viewModel.conversationMessages.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showSaveDialog by remember { mutableStateOf(false) }
@@ -106,11 +109,10 @@ fun VoiceScreen(
         handleDisconnect()
     }
 
-    // ✅ FIXED: Dùng messages.size thay vì viewModel.conversationMessages.size
     if (showSaveDialog) {
         SaveConversationDialog(
             messageCount = messages.size,
-            agentName = state.agentName ?: agentName, // ✅ Thêm dòng này
+            agentName = state.agentName ?: agentName,
             onDismiss = { showSaveDialog = false },
             onSave = { title ->
                 scope.launch {
@@ -137,6 +139,8 @@ fun VoiceScreen(
                 agentId = agentId,
                 agentName = state.agentName ?: agentName,
                 status = state.status,
+                state = state, // ✅ Thêm
+                viewModel = viewModel, // ✅ Thêm
                 onNavigateBack = {
                     if (state.status == VoiceStatus.CONNECTED) {
                         handleDisconnect()
@@ -172,6 +176,8 @@ private fun ModernVoiceTopBar(
     agentId: String?,
     agentName: String?,
     status: VoiceStatus,
+    state: VoiceUiState, // ✅ Thêm
+    viewModel: VoiceViewModel, // ✅ Thêm
     onNavigateBack: () -> Unit
 ) {
     CenterAlignedTopAppBar(
@@ -203,7 +209,40 @@ private fun ModernVoiceTopBar(
                 Icon(Icons.Default.ArrowBack, "Back")
             }
         },
+        // ✅ 2 NÚT COMPACT + STATUS
         actions = {
+            // ✅ MUTE BUTTON
+            AnimatedVisibility(
+                visible = status == VoiceStatus.CONNECTED,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut()
+            ) {
+                CompactMuteButton(
+                    isMuted = state.micMuted,
+                    onClick = { viewModel.toggleMic() }
+                )
+            }
+
+            // ✅ MODE SWITCH BUTTON
+            AnimatedVisibility(
+                visible = status == VoiceStatus.CONNECTED,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut()
+            ) {
+                CompactModeSwitchButton(
+                    currentMode = state.conversationMode,
+                    onClick = {
+                        val newMode = when (state.conversationMode) {
+                            ConversationControlMode.FULL_DUPLEX -> ConversationControlMode.PTT
+                            ConversationControlMode.PTT -> ConversationControlMode.FULL_DUPLEX
+                        }
+                        viewModel.setConversationMode(newMode)
+                    }
+                )
+            }
+
+            // ✅ STATUS BADGE
+            Spacer(modifier = Modifier.width(4.dp))
             Surface(
                 shape = MaterialTheme.shapes.small,
                 color = when (status) {
@@ -213,13 +252,13 @@ private fun ModernVoiceTopBar(
                 }
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(8.dp)
+                            .size(6.dp)
                             .clip(CircleShape)
                             .background(
                                 when (status) {
@@ -231,11 +270,11 @@ private fun ModernVoiceTopBar(
                     )
                     Text(
                         when (status) {
-                            VoiceStatus.CONNECTED -> "Connected"
-                            VoiceStatus.CONNECTING -> "Connecting..."
-                            VoiceStatus.DISCONNECTED -> "Disconnected"
+                            VoiceStatus.CONNECTED -> "On"
+                            VoiceStatus.CONNECTING -> "..."
+                            VoiceStatus.DISCONNECTED -> "Off"
                         },
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -351,7 +390,6 @@ private fun ConnectedSinglePageView(
                 .fillMaxHeight(0.35f)
         )
 
-        // ✅ Truyền viewModel thay vì messages list
         ConversationSection(
             viewModel = viewModel,
             modifier = Modifier
@@ -366,7 +404,6 @@ private fun ConnectedSinglePageView(
         )
     }
 }
-
 
 // ==================== 1️⃣ AUDIO VISUALIZATION SECTION ====================
 
@@ -383,7 +420,6 @@ private fun AudioVisualizationSection(
             modifier = Modifier.padding(Spacing.Medium),
             verticalArrangement = Arrangement.spacedBy(Spacing.Small)
         ) {
-            // Mic Waveform
             CompactWaveformCard(
                 title = "🎤 You",
                 pcmData = state.micPcmData,
@@ -394,7 +430,6 @@ private fun AudioVisualizationSection(
                     .weight(1f)
             )
 
-            // Agent Waveform
             CompactWaveformCard(
                 title = "🤖 Agent",
                 pcmData = state.playbackPcmData,
@@ -405,7 +440,6 @@ private fun AudioVisualizationSection(
                     .weight(1f)
             )
 
-            // VAD Score Bar
             CompactVadBar(vad = state.vad)
         }
     }
@@ -491,10 +525,7 @@ private fun CompactVadBar(vad: Float) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(
-            "🎙️",
-            style = MaterialTheme.typography.bodyMedium
-        )
+        Text("🎙️", style = MaterialTheme.typography.bodyMedium)
         LinearProgressIndicator(
             progress = { vad },
             modifier = Modifier
@@ -528,8 +559,6 @@ private fun WaveformVisualization(
 
         val width = size.width
         val height = size.height
-
-        // ✅ Fixed number of bars
         val numBars = 60
         val barWidth = (width / numBars) * 0.7f
         val barSpacing = (width / numBars) * 0.3f
@@ -539,7 +568,6 @@ private fun WaveformVisualization(
             val sampleIndex = i * step
             if (sampleIndex >= samples.size) break
 
-            // Calculate RMS for this bar
             var sum = 0f
             val windowSize = step.coerceAtMost(20)
             for (j in 0 until windowSize) {
@@ -550,17 +578,10 @@ private fun WaveformVisualization(
                 }
             }
             val rms = kotlin.math.sqrt(sum / windowSize)
-
-            // Normalize to 0-1
             val normalizedAmplitude = (rms / Short.MAX_VALUE).coerceIn(0f, 1f)
-
-            // Bar height (minimum 5% for visual feedback)
             val barHeight = height * normalizedAmplitude.coerceAtLeast(0.05f)
-
-            // X position
             val x = i * (barWidth + barSpacing)
 
-            // Draw bar (rounded)
             drawRoundRect(
                 color = color.copy(alpha = animatedAlpha),
                 topLeft = Offset(x, (height - barHeight) / 2),
@@ -571,19 +592,16 @@ private fun WaveformVisualization(
     }
 }
 
-
 // ==================== 2️⃣ CONVERSATION SECTION ====================
 
 @Composable
 private fun ConversationSection(
-    viewModel: VoiceViewModel, // ✅ Nhận ViewModel thay vì List
+    viewModel: VoiceViewModel,
     modifier: Modifier = Modifier
 ) {
-    // ✅ Collect StateFlow
     val messages by viewModel.conversationMessages.collectAsState()
     val listState = rememberLazyListState()
 
-    // ✅ Debug log
     LaunchedEffect(messages.size) {
         Log.d("VoiceScreen", "📊 Messages: ${messages.size}")
         if (messages.isNotEmpty()) {
@@ -635,7 +653,6 @@ private fun ConversationSection(
         }
     }
 }
-
 
 @Composable
 private fun ConversationMessageBubble(message: ConversationMessage) {
@@ -715,19 +732,7 @@ private fun ControlsSection(
     viewModel: VoiceViewModel,
     modifier: Modifier = Modifier
 ) {
-    var showModeDialog by remember { mutableStateOf(false) }
     var textInput by remember { mutableStateOf("") }
-
-    if (showModeDialog) {
-        ConversationModeDialog(
-            currentMode = state.conversationMode,
-            onDismiss = { showModeDialog = false },
-            onModeSelected = {
-                viewModel.setConversationMode(it)
-                showModeDialog = false
-            }
-        )
-    }
 
     Surface(
         modifier = modifier,
@@ -738,49 +743,6 @@ private fun ControlsSection(
             modifier = Modifier.padding(Spacing.Medium),
             verticalArrangement = Arrangement.spacedBy(Spacing.Small)
         ) {
-            // Row 1: Mic & Mode buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
-            ) {
-                // Mic button
-                FilledTonalButton(
-                    onClick = { viewModel.toggleMic() },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = if (state.micMuted) {
-                            MaterialTheme.extendedColors.warning
-                        } else {
-                            MaterialTheme.colorScheme.primaryContainer
-                        }
-                    )
-                ) {
-                    Icon(
-                        if (state.micMuted) Icons.Default.MicOff else Icons.Default.Mic,
-                        contentDescription = null
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(if (state.micMuted) "Unmute" else "Mute")
-                }
-
-                // Mode button
-                OutlinedButton(
-                    onClick = { showModeDialog = true },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        when (state.conversationMode) {
-                            ConversationControlMode.FULL_DUPLEX -> "Duplex"
-                            ConversationControlMode.PTT -> "PTT"
-                        },
-                        maxLines = 1
-                    )
-                }
-            }
-
-            // Row 2: Text input
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(Spacing.Small),
@@ -811,72 +773,239 @@ private fun ControlsSection(
     }
 }
 
-// ==================== MODE DIALOG ====================
+
+// ✅ COMPACT BUTTONS (TopBar size)
 
 @Composable
-private fun ConversationModeDialog(
-    currentMode: ConversationControlMode,
-    onDismiss: () -> Unit,
-    onModeSelected: (ConversationControlMode) -> Unit
+private fun CompactMuteButton(
+    isMuted: Boolean,
+    onClick: () -> Unit
 ) {
+    val backgroundColor by animateColorAsState(
+        targetValue = if (isMuted) MaterialTheme.colorScheme.error else MaterialTheme.extendedColors.success,
+        animationSpec = tween(300),
+        label = "compact_mute_bg"
+    )
+
+    val scale by animateFloatAsState(
+        targetValue = if (isMuted) 0.9f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "compact_mute_scale"
+    )
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = Modifier
+            .padding(horizontal = 4.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Surface(
+            modifier = Modifier
+                .size(36.dp)
+                .graphicsLayer(scaleX = scale, scaleY = scale),
+            shape = CircleShape,
+            color = backgroundColor.copy(alpha = 0.2f)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = backgroundColor
+                )
+            }
+        }
+
+        Text(
+            text = if (isMuted) "Off" else "On",
+            style = MaterialTheme.typography.labelSmall,
+            fontSize = 9.sp,
+            color = backgroundColor,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+private fun CompactModeSwitchButton(
+    currentMode: ConversationControlMode,
+    onClick: () -> Unit
+) {
+    val isFullDuplex = currentMode == ConversationControlMode.FULL_DUPLEX
+    val backgroundColor = if (isFullDuplex) MaterialTheme.extendedColors.info else Color(0xFF6B4EFF)
+
+    val rotation by animateFloatAsState(
+        targetValue = if (isFullDuplex) 0f else 180f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "compact_mode_rotation"
+    )
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = Modifier
+            .padding(horizontal = 4.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Surface(
+            modifier = Modifier.size(36.dp),
+            shape = CircleShape,
+            color = backgroundColor.copy(alpha = 0.2f)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = if (isFullDuplex) Icons.Default.RecordVoiceOver else Icons.Default.TouchApp,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(18.dp)
+                        .graphicsLayer(rotationZ = rotation),
+                    tint = backgroundColor
+                )
+            }
+        }
+
+        Text(
+            text = if (isFullDuplex) "FD" else "PTT",
+            style = MaterialTheme.typography.labelSmall,
+            fontSize = 9.sp,
+            color = backgroundColor,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+// ==================== SAVE DIALOG ====================
+
+@Composable
+fun SaveConversationDialog(
+    messageCount: Int,
+    agentName: String?,
+    onDismiss: () -> Unit,
+    onSave: (String?) -> Unit,
+    onDiscard: () -> Unit
+) {
+    var title by remember { mutableStateOf("") }
+    var showTitleInput by remember { mutableStateOf(false) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = {
-            Icon(Icons.Default.Settings, contentDescription = null)
-        },
-        title = {
-            Text("Conversation Mode")
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                ConversationControlMode.entries.forEach { mode ->
-                    Card(
-                        onClick = { onModeSelected(mode) },
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (currentMode == mode) {
-                                MaterialTheme.colorScheme.primaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.surface
-                            }
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = currentMode == mode,
-                                onClick = null
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(
-                                    when (mode) {
-                                        ConversationControlMode.FULL_DUPLEX -> "Full Duplex"
-                                        ConversationControlMode.PTT -> "Push-to-Talk"
-                                    },
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    when (mode) {
-                                        ConversationControlMode.FULL_DUPLEX -> "Both can talk anytime"
-                                        ConversationControlMode.PTT -> "Mic mutes when agent speaks"
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.extendedColors.success.copy(alpha = 0.2f),
+                modifier = Modifier.size(56.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Default.Save,
+                        null,
+                        modifier = Modifier.size(28.dp),
+                        tint = MaterialTheme.extendedColors.success
+                    )
                 }
             }
         },
+        title = {
+            Text("Lưu cuộc hội thoại?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                if (!agentName.isNullOrBlank()) {
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("🤖", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                agentName,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
+
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Số tin nhắn", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.primaryContainer) {
+                            Text(
+                                "$messageCount",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
+
+                if (showTitleInput) {
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        label = { Text("Tiêu đề (tùy chọn)") },
+                        placeholder = { Text("Nhập tiêu đề...") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.medium
+                    )
+                } else {
+                    TextButton(onClick = { showTitleInput = true }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Edit, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Thêm tiêu đề")
+                    }
+                }
+
+                Text(
+                    "Cuộc hội thoại sẽ được lưu vào lịch sử",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Close")
+            Button(
+                onClick = { onSave(title.ifBlank { null }) },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.extendedColors.success)
+            ) {
+                Icon(Icons.Default.Save, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Lưu")
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onDismiss) { Text("Hủy") }
+                OutlinedButton(
+                    onClick = onDiscard,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Bỏ qua")
+                }
             }
         }
     )

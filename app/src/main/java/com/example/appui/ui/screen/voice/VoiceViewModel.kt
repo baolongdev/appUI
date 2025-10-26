@@ -337,7 +337,11 @@ class VoiceViewModel @Inject constructor(
                 updateMicActiveState(mode)
 
                 if (mode == VoiceMode.SPEAKING) {
-                    audioSessionManager.enterMediaLoudSession(maxBoostDb = MEDIA_SESSION_BOOST_DB)
+                    audioSessionManager.enterVoiceSession(
+                        maxBoostDb = VOICE_SESSION_BOOST_DB,
+                        preferSpeakerForMax = false
+                    )
+//                    audioSessionManager.enterMediaLoudSession(maxBoostDb = MEDIA_SESSION_BOOST_DB)
                 }
             }
         }

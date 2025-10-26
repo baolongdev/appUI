@@ -11,6 +11,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -40,6 +41,7 @@ import com.example.appui.data.model.ConversationMessage
 import com.example.appui.data.model.Speaker
 import com.example.appui.domain.repository.VoiceStatus
 import com.example.appui.ui.components.RiveAnimation
+import com.example.appui.ui.screen.voice.ConversationControlMode
 import com.example.appui.ui.screen.voice.VoiceViewModel
 import com.example.appui.ui.theme.extendedColors
 import kotlinx.coroutines.delay
@@ -61,7 +63,6 @@ fun AIFaceScreen(
     var showBottomSheet by remember { mutableStateOf(false) }
     var showSaveDialog by remember { mutableStateOf(false) }
 
-    // ✅ PERMISSION LAUNCHER (học từ VoiceScreen)
     val permissionsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -69,16 +70,11 @@ fun AIFaceScreen(
         if (allGranted) {
             viewModel.connect(agentId, agentName, enablePcmCapture = true)
         } else {
-            Toast.makeText(
-                context,
-                "❌ Cần quyền Microphone để sử dụng",
-                Toast.LENGTH_SHORT
-            ).show()
+            Toast.makeText(context, "❌ Cần quyền Microphone để sử dụng", Toast.LENGTH_SHORT).show()
             onClose()
         }
     }
 
-    // ✅ CONNECT WITH PERMISSION CHECK
     fun connectWithPermissionCheck() {
         val requiredPermissions = arrayOf(
             Manifest.permission.RECORD_AUDIO,
@@ -116,7 +112,7 @@ fun AIFaceScreen(
     if (showSaveDialog) {
         SaveConversationDialog(
             messageCount = messages.size,
-            agentName = uiState.agentName ?: agentName, // ✅ FIXED: Thêm agentName
+            agentName = uiState.agentName ?: agentName,
             onDismiss = { showSaveDialog = false },
             onSave = { title ->
                 scope.launch {
@@ -173,7 +169,39 @@ fun AIFaceScreen(
                         Icon(Icons.Default.Close, "Close", tint = Color.White)
                     }
                 },
+                // ✅ 2 NÚT COMPACT + NÚT DETAILS
                 actions = {
+                    // ✅ MUTE BUTTON
+                    AnimatedVisibility(
+                        visible = uiState.status == VoiceStatus.CONNECTED,
+                        enter = fadeIn() + scaleIn(),
+                        exit = fadeOut() + scaleOut()
+                    ) {
+                        CompactMuteButton(
+                            isMuted = uiState.micMuted,
+                            onClick = { viewModel.toggleMic() }
+                        )
+                    }
+
+                    // ✅ MODE SWITCH BUTTON
+                    AnimatedVisibility(
+                        visible = uiState.status == VoiceStatus.CONNECTED,
+                        enter = fadeIn() + scaleIn(),
+                        exit = fadeOut() + scaleOut()
+                    ) {
+                        CompactModeSwitchButton(
+                            currentMode = uiState.conversationMode,
+                            onClick = {
+                                val newMode = when (uiState.conversationMode) {
+                                    ConversationControlMode.FULL_DUPLEX -> ConversationControlMode.PTT
+                                    ConversationControlMode.PTT -> ConversationControlMode.FULL_DUPLEX
+                                }
+                                viewModel.setConversationMode(newMode)
+                            }
+                        )
+                    }
+
+                    // ✅ DETAILS BUTTON
                     IconButton(onClick = { showBottomSheet = true }) {
                         Icon(Icons.Default.ExpandLess, "Details", tint = Color.White)
                     }
@@ -246,6 +274,115 @@ fun AIFaceScreen(
         }
     }
 }
+
+// ==================== COMPACT BUTTONS (TopBar) ====================
+
+@Composable
+private fun CompactMuteButton(
+    isMuted: Boolean,
+    onClick: () -> Unit
+) {
+    val backgroundColor by animateColorAsState(
+        targetValue = if (isMuted) MaterialTheme.colorScheme.error else MaterialTheme.extendedColors.success,
+        animationSpec = tween(300),
+        label = "compact_mute_bg"
+    )
+
+    val scale by animateFloatAsState(
+        targetValue = if (isMuted) 0.9f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "compact_mute_scale"
+    )
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = Modifier
+            .padding(horizontal = 4.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Surface(
+            modifier = Modifier
+                .size(36.dp)
+                .graphicsLayer(scaleX = scale, scaleY = scale),
+            shape = CircleShape,
+            color = backgroundColor.copy(alpha = 0.2f)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = backgroundColor
+                )
+            }
+        }
+
+        Text(
+            text = if (isMuted) "Off" else "On",
+            style = MaterialTheme.typography.labelSmall,
+            fontSize = 9.sp,
+            color = backgroundColor,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+private fun CompactModeSwitchButton(
+    currentMode: ConversationControlMode,
+    onClick: () -> Unit
+) {
+    val isFullDuplex = currentMode == ConversationControlMode.FULL_DUPLEX
+    val backgroundColor = if (isFullDuplex) MaterialTheme.extendedColors.info else Color(0xFF6B4EFF)
+
+    val rotation by animateFloatAsState(
+        targetValue = if (isFullDuplex) 0f else 180f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "compact_mode_rotation"
+    )
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = Modifier
+            .padding(horizontal = 4.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Surface(
+            modifier = Modifier.size(36.dp),
+            shape = CircleShape,
+            color = backgroundColor.copy(alpha = 0.2f)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = if (isFullDuplex) Icons.Default.RecordVoiceOver else Icons.Default.TouchApp,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(18.dp)
+                        .graphicsLayer(rotationZ = rotation),
+                    tint = backgroundColor
+                )
+            }
+        }
+
+        Text(
+            text = if (isFullDuplex) "FD" else "PTT",
+            style = MaterialTheme.typography.labelSmall,
+            fontSize = 9.sp,
+            color = backgroundColor,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+// ==================== AI FACE WITH RIVE ====================
 
 @Composable
 private fun AIFaceWithRive(
@@ -538,6 +675,8 @@ private fun calculateMouthScale(
     return scale.coerceIn(1f, 1.3f)
 }
 
+// ==================== TYPING TEXT DISPLAY ====================
+
 @Composable
 private fun TypingTextDisplay(
     viewModel: VoiceViewModel,
@@ -561,11 +700,11 @@ private fun TypingTextDisplay(
 
                 for (i in sentence.indices) {
                     visibleText = sentence.substring(0, i + 1)
-                    delay(20)
+                    delay(50)
                 }
 
                 if (sentenceIdx < sentences.size - 1) {
-                    delay(800)
+                    delay(500)
                 }
             }
 
@@ -630,10 +769,13 @@ private fun TypingTextDisplay(
     }
 }
 
+// ==================== SAVE DIALOG & BOTTOM SHEET ====================
+// (Giữ nguyên code cũ cho SaveConversationDialog, BottomSheetContent, v.v...)
+
 @Composable
 fun SaveConversationDialog(
     messageCount: Int,
-    agentName: String?, // ✅ FIXED: Thêm parameter
+    agentName: String?,
     onDismiss: () -> Unit,
     onSave: (String?) -> Unit,
     onDiscard: () -> Unit
@@ -668,7 +810,6 @@ fun SaveConversationDialog(
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                // ✅ FIXED: Hiển thị Agent Name
                 if (!agentName.isNullOrBlank()) {
                     Surface(
                         shape = MaterialTheme.shapes.medium,
@@ -738,11 +879,7 @@ fun SaveConversationDialog(
                         onClick = { showTitleInput = true },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(
-                            Icons.Default.Edit,
-                            null,
-                            modifier = Modifier.size(18.dp)
-                        )
+                        Icon(Icons.Default.Edit, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("Thêm tiêu đề")
                     }
@@ -788,7 +925,6 @@ fun SaveConversationDialog(
     )
 }
 
-// BottomSheet functions giữ nguyên như cũ...
 @Composable
 private fun BottomSheetContent(
     viewModel: VoiceViewModel,
@@ -999,10 +1135,7 @@ private fun ConversationSection(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    "No messages yet",
-                    color = Color.Gray
-                )
+                Text("No messages yet", color = Color.Gray)
             }
         } else {
             LazyColumn(

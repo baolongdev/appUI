@@ -5,7 +5,9 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Upgrade
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,10 +33,14 @@ fun HomeScreen(
     onVoiceClick: (String?) -> Unit = {},
     onAgentsClick: () -> Unit = {},
     onAvatarView: (String, String?) -> Unit = { _, _ -> },
-    onNavigateToUpdate: () -> Unit = {}
+    onNavigateToUpdate: () -> Unit = {},
+    onExit: () -> Unit = {}
 ) {
     val homeState by viewModel.ui.collectAsState()
     val agentsState by agentsViewModel.ui.collectAsState()
+
+    // ✅ THÊM: Exit confirmation dialog state
+    var showExitDialog by remember { mutableStateOf(false) }
 
     Box(Modifier.fillMaxSize()) {
         HomeSidebar(
@@ -44,7 +50,7 @@ fun HomeScreen(
             onSectionSelected = viewModel::selectSection,
             onToggleSidebar = viewModel::toggleSidebar,
             onSettings = onNavigateToUpdate,
-            onLogout = {},
+            onLogout = { showExitDialog = true }, // ✅ Show dialog instead
             hasUpdate = homeState.hasUpdate
         )
 
@@ -66,6 +72,45 @@ fun HomeScreen(
                 onUpdate = {
                     viewModel.dismissUpdateNotification()
                     onNavigateToUpdate()
+                }
+            )
+        }
+
+        // ✅ THÊM: Exit confirmation dialog
+        if (showExitDialog) {
+            AlertDialog(
+                onDismissRequest = { showExitDialog = false },
+                icon = {
+                    Icon(
+                        Icons.Default.Logout,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                },
+                title = {
+                    Text(
+                        "Thoát ứng dụng?",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Text("Bạn có chắc muốn thoát khỏi ứng dụng không?")
+                },
+                confirmButton = {
+                    Button(
+                        onClick = onExit,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Text("Thoát")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showExitDialog = false }) {
+                        Text("Hủy")
+                    }
                 }
             )
         }

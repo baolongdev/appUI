@@ -1,7 +1,9 @@
 package com.example.appui.ui.navigation
 
+import android.app.Activity
 import android.util.Log
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -13,10 +15,13 @@ import com.example.appui.ui.screen.history.ConversationHistoryScreen
 import com.example.appui.ui.screen.home.HomeScreen
 import com.example.appui.ui.screen.update.UpdateScreen
 import com.example.appui.ui.screen.voice.VoiceScreen
+import kotlin.system.exitProcess
 
 @Composable
 fun AppNav() {
     val nav = rememberNavController()
+    val context = LocalContext.current // ✅ Get context
+    val activity = context as? Activity // ✅ Cast to Activity
 
     NavHost(navController = nav, startDestination = Routes.HOME) {
         // ==================== HOME SCREEN ====================
@@ -31,13 +36,17 @@ fun AppNav() {
                     Log.d("AppNav", "👥 Agents click")
                     nav.navigate(Routes.AGENTS)
                 },
-                onAvatarView = { agentId, agentName -> // ✅ FIXED: Nhận cả 2 params
+                onAvatarView = { agentId, agentName ->
                     Log.d("AppNav", "🎭 Avatar view: id=$agentId, name=$agentName")
                     nav.navigate(Routes.aiFace(agentId, agentName))
                 },
                 onNavigateToUpdate = {
                     Log.d("AppNav", "⬆️ Update click")
                     nav.navigate(Routes.UPDATE)
+                },
+                onExit = { // ✅ FIXED: Sử dụng activity?.finishAffinity()
+                    activity?.finishAffinity()
+                    exitProcess(0)
                 }
             )
         }
