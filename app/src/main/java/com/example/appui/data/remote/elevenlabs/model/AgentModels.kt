@@ -46,11 +46,18 @@ data class GetAgentDetailResponse(
     @Json(name = "agent_id") val agentId: String,
     val name: String,
     @Json(name = "conversation_config") val conversationConfig: ConversationalConfig? = null,
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+    @Json(name = "created_at_unix_secs") val createdAtUnixSecs: Long? = null,
+    @Json(name = "last_call_time_unix_secs") val lastCallTimeUnixSecs: Long? = null
 )
 
 /**
- * Alias for UI compatibility
+ * ✅ ALIAS for UI compatibility (FIXED)
+ */
+typealias AgentDetailResponseModel = GetAgentDetailResponse
+
+/**
+ * Alias for backward compatibility
  */
 typealias GetAgentResponseModel = GetAgentDetailResponse
 

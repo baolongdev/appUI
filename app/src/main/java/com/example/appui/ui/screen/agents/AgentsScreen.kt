@@ -35,8 +35,8 @@ import java.time.ZoneId
 @Composable
 fun AgentsScreen(
     vm: AgentsViewModel = hiltViewModel(),
-    onPlayAgent: (agentId: String, agentName: String) -> Unit, // ✅ FIXED signature
-    onAvatarView: (agentId: String, agentName: String) -> Unit, // ✅ THÊM
+    onPlayAgent: (agentId: String, agentName: String) -> Unit,
+    onAvatarView: (agentId: String, agentName: String) -> Unit,
     onNavigateBack: () -> Unit = {}
 ) {
     val ui by vm.ui.collectAsState()
@@ -76,7 +76,7 @@ fun AgentsScreen(
                         IconButton(onClick = onNavigateBack) {
                             Icon(
                                 Icons.Default.ArrowBack,
-                                "Back",
+                                "Quay lại",
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
@@ -98,7 +98,7 @@ fun AgentsScreen(
 
                         Column {
                             Text(
-                                "Agents Management",
+                                "Quản lý Agents",
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -134,7 +134,7 @@ fun AgentsScreen(
                     ) {
                         Icon(
                             Icons.Default.Refresh,
-                            "Refresh",
+                            "Làm mới",
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
@@ -164,7 +164,7 @@ fun AgentsScreen(
                             IconButton(onClick = { search = "" }) {
                                 Icon(
                                     Icons.Filled.Clear,
-                                    "Clear",
+                                    "Xóa",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
@@ -194,14 +194,14 @@ fun AgentsScreen(
                 ui.selected == null -> ModernAgentsTable(
                     agents = ui.agents,
                     onRowClick = vm::loadDetail,
-                    onPlay = { agentId, agentName -> onPlayAgent(agentId, agentName) }, // ✅ FIXED
-                    onAvatarView = { agentId, agentName -> onAvatarView(agentId, agentName) } // ✅ THÊM
+                    onPlay = { agentId, agentName -> onPlayAgent(agentId, agentName) },
+                    onAvatarView = { agentId, agentName -> onAvatarView(agentId, agentName) }
                 )
                 else -> ModernAgentDetail(
                     data = ui.selected!!,
                     onBack = vm::clearDetail,
-                    onPlay = { onPlayAgent(ui.selected!!.agentId, ui.selected!!.name) }, // ✅ FIXED
-                    onAvatarView = { onAvatarView(ui.selected!!.agentId, ui.selected!!.name) } // ✅ THÊM
+                    onPlay = { onPlayAgent(ui.selected!!.agentId, ui.selected!!.name) },
+                    onAvatarView = { onAvatarView(ui.selected!!.agentId, ui.selected!!.name) }
                 )
             }
         }
@@ -284,10 +284,10 @@ private fun ModernErrorView(error: String) {
 // ============= MODERN AGENTS TABLE =============
 @Composable
 private fun ModernAgentsTable(
-    agents: List<AgentSummaryResponseModel>, // ✅ FIXED type
+    agents: List<AgentSummaryResponseModel>,
     onRowClick: (String) -> Unit,
-    onPlay: (String, String) -> Unit, // ✅ FIXED signature
-    onAvatarView: (String, String) -> Unit // ✅ THÊM
+    onPlay: (String, String) -> Unit,
+    onAvatarView: (String, String) -> Unit
 ) {
     if (agents.isEmpty()) {
         Box(
@@ -337,8 +337,8 @@ private fun ModernAgentsTable(
             ModernAgentCard(
                 agent = agent,
                 onClick = { onRowClick(agent.agentId) },
-                onPlay = { onPlay(agent.agentId, agent.name) }, // ✅ FIXED
-                onAvatarView = { onAvatarView(agent.agentId, agent.name) } // ✅ THÊM
+                onPlay = { onPlay(agent.agentId, agent.name) },
+                onAvatarView = { onAvatarView(agent.agentId, agent.name) }
             )
         }
     }
@@ -347,10 +347,10 @@ private fun ModernAgentsTable(
 // ============= MODERN AGENT CARD =============
 @Composable
 private fun ModernAgentCard(
-    agent: AgentSummaryResponseModel, // ✅ FIXED type
+    agent: AgentSummaryResponseModel,
     onClick: () -> Unit,
     onPlay: () -> Unit,
-    onAvatarView: () -> Unit // ✅ THÊM
+    onAvatarView: () -> Unit
 ) {
     val (lastLabel, recent) = remember(agent.lastCallTimeUnixSecs) {
         lastCallLabel(agent.lastCallTimeUnixSecs)
@@ -464,9 +464,9 @@ private fun ModernAgentCard(
                 }
             }
 
-            // ✅ Action Buttons
+            // Action Buttons
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                // ✅ Avatar Button
+                // Avatar Button
                 FilledTonalIconButton(
                     onClick = onAvatarView,
                     colors = IconButtonDefaults.filledTonalIconButtonColors(
@@ -486,11 +486,11 @@ private fun ModernAgentCard(
                 ) {
                     Icon(Icons.Default.PlayArrow, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Play")
+                    Text("Chạy")
                 }
 
                 OutlinedIconButton(onClick = onClick) {
-                    Icon(Icons.Default.Info, "Details")
+                    Icon(Icons.Default.Info, "Chi tiết")
                 }
             }
         }
@@ -503,7 +503,7 @@ private fun ModernAgentDetail(
     data: GetAgentDetailResponse,
     onBack: () -> Unit,
     onPlay: () -> Unit,
-    onAvatarView: () -> Unit // ✅ THÊM
+    onAvatarView: () -> Unit
 ) {
     val clipboard = LocalClipboardManager.current
     val successColor = MaterialTheme.extendedColors.success
@@ -566,7 +566,7 @@ private fun ModernAgentDetail(
                                             .background(successColor)
                                     )
                                     Text(
-                                        "Active",
+                                        "Đang hoạt động",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = successColor,
                                         fontWeight = FontWeight.Bold
@@ -605,14 +605,14 @@ private fun ModernAgentDetail(
                             FilledTonalIconButton(
                                 onClick = { clipboard.setText(AnnotatedString(data.agentId)) }
                             ) {
-                                Icon(Icons.Outlined.ContentCopy, "Copy")
+                                Icon(Icons.Outlined.ContentCopy, "Sao chép")
                             }
                         }
                     }
 
                     Spacer(Modifier.height(16.dp))
 
-                    // ✅ Action Buttons với Avatar
+                    // Action Buttons với Avatar
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -637,29 +637,29 @@ private fun ModernAgentDetail(
                         ) {
                             Icon(Icons.Outlined.RecordVoiceOver, null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Play")
+                            Text("Chạy")
                         }
                     }
                 }
             }
         }
 
-        // Configuration sections (giữ nguyên như code gốc)
+        // Configuration sections
         item {
             ModernConfigSection(
                 icon = Icons.Outlined.Audiotrack,
-                title = "TTS Configuration",
+                title = "Cấu hình TTS",
                 color = MaterialTheme.colorScheme.primary
             ) {
                 val tts = data.conversationConfig?.tts
                 ConfigGrid {
                     ConfigItem("Model", tts?.modelId)
                     ConfigItem("Voice", tts?.voiceId)
-                    ConfigItem("Output Format", tts?.agentOutputAudioFormat)
-                    ConfigItem("Latency", tts?.optimizeStreamingLatency)
-                    ConfigItem("Stability", tts?.stability?.let { "%.2f".format(it) })
-                    ConfigItem("Speed", tts?.speed?.let { "%.2f".format(it) })
-                    ConfigItem("Similarity", tts?.similarityBoost?.let { "%.2f".format(it) })
+                    ConfigItem("Định dạng đầu ra", tts?.agentOutputAudioFormat)
+                    ConfigItem("Độ trễ", tts?.optimizeStreamingLatency)
+                    ConfigItem("Độ ổn định", tts?.stability?.let { "%.2f".format(it) })
+                    ConfigItem("Tốc độ", tts?.speed?.let { "%.2f".format(it) })
+                    ConfigItem("Tương tự", tts?.similarityBoost?.let { "%.2f".format(it) })
                 }
             }
         }
@@ -667,14 +667,14 @@ private fun ModernAgentDetail(
         item {
             ModernConfigSection(
                 icon = Icons.Outlined.GraphicEq,
-                title = "ASR Configuration",
+                title = "Cấu hình ASR",
                 color = MaterialTheme.colorScheme.secondary
             ) {
                 val asr = data.conversationConfig?.asr
                 ConfigGrid {
-                    ConfigItem("Provider", asr?.provider)
-                    ConfigItem("Quality", asr?.quality)
-                    ConfigItem("Input Format", asr?.userInputAudioFormat)
+                    ConfigItem("Nhà cung cấp", asr?.provider)
+                    ConfigItem("Chất lượng", asr?.quality)
+                    ConfigItem("Định dạng đầu vào", asr?.userInputAudioFormat)
                 }
             }
         }
@@ -682,14 +682,14 @@ private fun ModernAgentDetail(
         item {
             ModernConfigSection(
                 icon = Icons.Outlined.Timelapse,
-                title = "Turn Settings",
+                title = "Cài đặt lượt",
                 color = MaterialTheme.colorScheme.tertiary
             ) {
                 val turn = data.conversationConfig?.turn
                 ConfigGrid {
-                    ConfigItem("Mode", turn?.mode)
-                    ConfigItem("Timeout", turn?.turnTimeout?.let { "%.1f s".format(it) })
-                    ConfigItem("Silence End", turn?.silenceEndCallTimeout?.let { "%.1f s".format(it) })
+                    ConfigItem("Chế độ", turn?.mode)
+                    ConfigItem("Thời gian chờ", turn?.turnTimeout?.let { "%.1f giây".format(it) })
+                    ConfigItem("Kết thúc im lặng", turn?.silenceEndCallTimeout?.let { "%.1f giây".format(it) })
                 }
             }
         }
@@ -697,16 +697,16 @@ private fun ModernAgentDetail(
         item {
             ModernConfigSection(
                 icon = Icons.Outlined.RecordVoiceOver,
-                title = "Agent Prompt",
+                title = "Prompt Agent",
                 color = MaterialTheme.colorScheme.primary
             ) {
                 val agent = data.conversationConfig?.agent
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     agent?.firstMessage?.let {
-                        ConfigDetail("First Message", it)
+                        ConfigDetail("Tin nhắn đầu tiên", it)
                     }
                     agent?.language?.let {
-                        ConfigDetail("Language", it)
+                        ConfigDetail("Ngôn ngữ", it)
                     }
                 }
             }
@@ -714,7 +714,7 @@ private fun ModernAgentDetail(
     }
 }
 
-// ============= HELPER COMPOSABLES (unchanged) =============
+// ============= HELPER COMPOSABLES =============
 @Composable
 private fun ModernConfigSection(
     icon: ImageVector,
@@ -800,16 +800,16 @@ private fun ConfigDetail(label: String, value: String) {
 }
 
 private fun lastCallLabel(unixSecs: Long?): Pair<String, Boolean> {
-    if (unixSecs == null || unixSecs <= 0L) return "Never" to false
+    if (unixSecs == null || unixSecs <= 0L) return "Chưa gọi" to false
     val now = Instant.now().epochSecond
     val delta = now - unixSecs
     val sevenDays = 7L * 24 * 3600
     val recent = delta in 0..sevenDays
     val label = when {
-        delta < 60 -> "Just now"
-        delta < 3600 -> "${delta / 60}m ago"
-        delta < 86400 -> "${delta / 3600}h ago"
-        delta < sevenDays -> "${delta / 86400}d ago"
+        delta < 60 -> "Vừa xong"
+        delta < 3600 -> "${delta / 60} phút trước"
+        delta < 86400 -> "${delta / 3600} giờ trước"
+        delta < sevenDays -> "${delta / 86400} ngày trước"
         else -> {
             val dt = Instant.ofEpochSecond(unixSecs).atZone(ZoneId.systemDefault())
             dt.toLocalDate().toString()

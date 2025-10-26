@@ -30,9 +30,9 @@ fun HomeContent(
     var useCustomId by remember { mutableStateOf(true) }
     val scrollState = rememberScrollState()
 
-    // ✅ BUILD OPTIONS: Custom ID first, no "Select an agent"
+    // BUILD OPTIONS: Custom ID first
     val dropdownOptions = buildList {
-        add("Custom ID..." to "custom")
+        add("Tùy chỉnh ID..." to "custom")
         agents.forEach { agent ->
             add(agent.name to agent.agentId)
         }
@@ -81,13 +81,13 @@ fun HomeContent(
                 }
 
                 Text(
-                    "Welcome",
+                    "Chào mừng",
                     style = MaterialTheme.typography.displayMedium,
                     fontWeight = FontWeight.Bold
                 )
 
                 Text(
-                    "Choose an option to get started",
+                    "Chọn một tùy chọn để bắt đầu",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -107,7 +107,7 @@ fun HomeContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .menuAnchor(),
-                    label = { Text("Select Agent") },
+                    label = { Text("Chọn Agent") },
                     leadingIcon = {
                         Icon(Icons.Default.SmartToy, null)
                     },
@@ -163,7 +163,7 @@ fun HomeContent(
                         showError = false
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Custom Agent ID") },
+                    label = { Text("Agent ID tùy chỉnh") },
                     placeholder = { Text("Nhập Agent ID...") },
                     leadingIcon = {
                         Icon(Icons.Default.Edit, null)
@@ -171,7 +171,7 @@ fun HomeContent(
                     trailingIcon = if (customAgentId.isNotEmpty()) {
                         {
                             IconButton(onClick = { customAgentId = "" }) {
-                                Icon(Icons.Default.Clear, "Clear")
+                                Icon(Icons.Default.Clear, "Xóa")
                             }
                         }
                     } else null,
@@ -222,7 +222,7 @@ fun HomeContent(
 
                         Column(horizontalAlignment = Alignment.Start) {
                             Text(
-                                "Voice Chat",
+                                "Trò chuyện giọng nói",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -310,7 +310,7 @@ fun HomeContent(
 
                         Column(horizontalAlignment = Alignment.Start) {
                             Text(
-                                "My Agents",
+                                "Agents của tôi",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer

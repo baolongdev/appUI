@@ -24,6 +24,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.appui.R
+import com.example.appui.ui.components.spotlightTarget
 import com.example.appui.ui.screen.home.HomeSection
 import com.example.appui.ui.theme.ComponentSize
 import com.example.appui.ui.theme.Spacing
@@ -37,7 +38,9 @@ fun ColumnScope.SidebarContent(
     onSettings: () -> Unit,
     onLogout: () -> Unit,
     isCollapsed: Boolean = false,
-    hasUpdate: Boolean = false
+    hasUpdate: Boolean = false,
+    showTutorial: Boolean = false,
+    onShowTutorial: () -> Unit = {}
 ) {
     SidebarHeaderWithToggle(
         isCollapsed = isCollapsed,
@@ -76,7 +79,7 @@ fun ColumnScope.SidebarContent(
         ) {
             if (titleAlpha > 0f) {
                 Text(
-                    text = "Navigation",
+                    text = "Điều hướng",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -87,14 +90,32 @@ fun ColumnScope.SidebarContent(
             }
         }
 
-        HomeSection.entries.forEach { section ->
-            SidebarNavigationItem(
-                section = section,
-                selected = section == currentSection,
-                onClick = { onSectionSelected(section) },
-                isCollapsed = isCollapsed
-            )
-        }
+        // ✅ HOME SECTION
+        SidebarNavigationItem(
+            section = HomeSection.HOME,
+            selected = HomeSection.HOME == currentSection,
+            onClick = { onSectionSelected(HomeSection.HOME) },
+            isCollapsed = isCollapsed,
+            modifier = Modifier.spotlightTarget("home_section")
+        )
+
+        // ✅ MY AGENTS SECTION
+        SidebarNavigationItem(
+            section = HomeSection.MY_AGENTS,
+            selected = HomeSection.MY_AGENTS == currentSection,
+            onClick = { onSectionSelected(HomeSection.MY_AGENTS) },
+            isCollapsed = isCollapsed,
+            modifier = Modifier.spotlightTarget("my_agents_section")
+        )
+
+        // ✅ HISTORY SECTION
+        SidebarNavigationItem(
+            section = HomeSection.HISTORY,
+            selected = HomeSection.HISTORY == currentSection,
+            onClick = { onSectionSelected(HomeSection.HISTORY) },
+            isCollapsed = isCollapsed,
+            modifier = Modifier.spotlightTarget("history_section")
+        )
     }
 
     Spacer(Modifier.height(Spacing.Small))
@@ -106,7 +127,9 @@ fun ColumnScope.SidebarContent(
         onSettings = onSettings,
         onLogout = onLogout,
         isCollapsed = isCollapsed,
-        hasUpdate = hasUpdate
+        hasUpdate = hasUpdate,
+        showTutorial = showTutorial,
+        onShowTutorial = onShowTutorial
     )
 }
 
@@ -146,7 +169,7 @@ private fun SidebarHeaderWithToggle(
         ) {
             Image(
                 painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                contentDescription = "App Logo",
+                contentDescription = "Logo ứng dụng",
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(Spacing.ExtraSmall)
@@ -159,7 +182,7 @@ private fun SidebarHeaderWithToggle(
         ) {
             Icon(
                 imageVector = Icons.Default.ChevronRight,
-                contentDescription = "Toggle sidebar",
+                contentDescription = "Thu gọn/Mở rộng sidebar",
                 tint = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.graphicsLayer { rotationZ = rotation }
             )
@@ -172,7 +195,8 @@ private fun SidebarNavigationItem(
     section: HomeSection,
     selected: Boolean,
     onClick: () -> Unit,
-    isCollapsed: Boolean
+    isCollapsed: Boolean,
+    modifier: Modifier = Modifier
 ) {
     val backgroundColor by animateColorAsState(
         targetValue = if (selected) {
@@ -201,7 +225,7 @@ private fun SidebarNavigationItem(
     )
 
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(ComponentSize.ButtonHeight)
             .clip(MaterialTheme.shapes.medium)
@@ -265,7 +289,9 @@ private fun SidebarFooterContent(
     onSettings: () -> Unit,
     onLogout: () -> Unit,
     isCollapsed: Boolean,
-    hasUpdate: Boolean
+    hasUpdate: Boolean,
+    showTutorial: Boolean,
+    onShowTutorial: () -> Unit
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(Spacing.Small),
@@ -273,17 +299,32 @@ private fun SidebarFooterContent(
             .fillMaxWidth()
             .padding(horizontal = Spacing.ExtraSmall)
     ) {
+        // ✅ NÚT HƯỚNG DẪN (chỉ hiện sau khi tutorial xong)
+        if (!showTutorial) {
+            SidebarFooterItem(
+                text = "Hướng dẫn",
+                icon = Icons.Default.Help,
+                onClick = onShowTutorial,
+                isDestructive = false,
+                isCollapsed = isCollapsed,
+                showBadge = false
+            )
+        }
+
+        // ✅ CÀI ĐẶT
         SidebarFooterItem(
-            text = "Settings",
+            text = "Cài đặt",
             icon = Icons.Default.Settings,
             onClick = onSettings,
             isDestructive = false,
             isCollapsed = isCollapsed,
-            showBadge = hasUpdate
+            showBadge = hasUpdate,
+            modifier = Modifier.spotlightTarget("settings_button")
         )
 
+        // ✅ THOÁT
         SidebarFooterItem(
-            text = "Logout",
+            text = "Thoát",
             icon = Icons.Default.Logout,
             onClick = onLogout,
             isDestructive = true,
@@ -294,7 +335,7 @@ private fun SidebarFooterContent(
         if (!isCollapsed && currentVersion.isNotBlank()) {
             Spacer(Modifier.height(Spacing.Small))
             Text(
-                text = "v$currentVersion",
+                text = "Phiên bản $currentVersion",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier.padding(start = Spacing.Small)
@@ -310,7 +351,8 @@ private fun SidebarFooterItem(
     onClick: () -> Unit,
     isDestructive: Boolean,
     isCollapsed: Boolean,
-    showBadge: Boolean = false
+    showBadge: Boolean = false,
+    modifier: Modifier = Modifier
 ) {
     val textAlpha by animateFloatAsState(
         targetValue = if (isCollapsed) 0f else 1f,
@@ -319,7 +361,7 @@ private fun SidebarFooterItem(
     )
 
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(ComponentSize.ButtonHeight)
             .clip(MaterialTheme.shapes.medium)

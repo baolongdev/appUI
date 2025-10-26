@@ -20,16 +20,13 @@ import com.example.appui.ui.theme.Spacing
 import com.example.appui.ui.theme.extendedColors
 import java.time.Instant
 
-/**
- * Agent Card - Grid View
- */
 @Composable
 fun AgentCard(
     agent: AgentSummaryResponseModel,
     isFavorite: Boolean,
     onClick: () -> Unit,
     onPlay: () -> Unit,
-    onAvatarView: () -> Unit, // ✅ THÊM
+    onAvatarView: () -> Unit,
     onToggleFavorite: () -> Unit
 ) {
     val (timeLabel, isRecent) = remember(agent.lastCallTimeUnixSecs) {
@@ -44,7 +41,6 @@ fun AgentCard(
         )
     ) {
         Column(Modifier.padding(16.dp)) {
-            // Header (giữ nguyên)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -108,7 +104,6 @@ fun AgentCard(
 
             Spacer(Modifier.height(12.dp))
 
-            // Agent ID (giữ nguyên)
             Surface(
                 shape = MaterialTheme.shapes.small,
                 color = MaterialTheme.colorScheme.surfaceVariant
@@ -125,7 +120,6 @@ fun AgentCard(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Spacer(Modifier.height(12.dp))
 
-            // ✅ FOOTER - UPDATE với 2 nút
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -149,7 +143,6 @@ fun AgentCard(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    // Avatar Button
                     FilledTonalButton(
                         onClick = onAvatarView,
                         colors = ButtonDefaults.filledTonalButtonColors(
@@ -158,14 +151,9 @@ fun AgentCard(
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                         modifier = Modifier.height(32.dp)
                     ) {
-                        Icon(
-                            Icons.Filled.Face,
-                            null,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        Icon(Icons.Filled.Face, null, modifier = Modifier.size(16.dp))
                     }
 
-                    // Play Button
                     Button(
                         onClick = onPlay,
                         colors = ButtonDefaults.buttonColors(
@@ -176,7 +164,7 @@ fun AgentCard(
                     ) {
                         Icon(Icons.Filled.PlayArrow, null, Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Play", style = MaterialTheme.typography.labelMedium)
+                        Text("Chạy", style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
@@ -184,17 +172,13 @@ fun AgentCard(
     }
 }
 
-
-/**
- * Agent List Item - List View
- */
 @Composable
 fun AgentListItem(
     agent: AgentSummaryResponseModel,
     isFavorite: Boolean,
     onClick: () -> Unit,
     onPlay: () -> Unit,
-    onAvatarView: () -> Unit, // ✅ THÊM
+    onAvatarView: () -> Unit,
     onToggleFavorite: () -> Unit
 ) {
     val (timeLabel, isRecent) = remember(agent.lastCallTimeUnixSecs) {
@@ -203,9 +187,7 @@ fun AgentListItem(
 
     ElevatedCard(onClick = onClick) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -274,7 +256,6 @@ fun AgentListItem(
                     )
                 }
 
-                // ✅ Avatar Button
                 FilledTonalIconButton(
                     onClick = onAvatarView,
                     modifier = Modifier.size(36.dp),
@@ -285,7 +266,6 @@ fun AgentListItem(
                     Icon(Icons.Filled.Face, null, Modifier.size(18.dp))
                 }
 
-                // Play Button
                 FilledTonalIconButton(
                     onClick = onPlay,
                     modifier = Modifier.size(36.dp),
@@ -304,9 +284,8 @@ fun AgentListItem(
     }
 }
 
-// Helper function
 private fun formatLastCallTime(unixSecs: Long?): Pair<String, Boolean> {
-    if (unixSecs == null || unixSecs <= 0) return "Never" to false
+    if (unixSecs == null || unixSecs <= 0) return "Chưa gọi" to false
 
     val now = Instant.now().epochSecond
     val delta = now - unixSecs
@@ -314,10 +293,10 @@ private fun formatLastCallTime(unixSecs: Long?): Pair<String, Boolean> {
     val isRecent = delta in 0..sevenDays
 
     val label = when {
-        delta < 60 -> "Just now"
-        delta < 3600 -> "${delta / 60}m ago"
-        delta < 86400 -> "${delta / 3600}h ago"
-        delta < sevenDays -> "${delta / 86400}d ago"
+        delta < 60 -> "Vừa xong"
+        delta < 3600 -> "${delta / 60} phút trước"
+        delta < 86400 -> "${delta / 3600} giờ trước"
+        delta < sevenDays -> "${delta / 86400} ngày trước"
         else -> {
             val date = java.time.Instant.ofEpochSecond(unixSecs)
                 .atZone(java.time.ZoneId.systemDefault())

@@ -42,11 +42,9 @@ import com.example.appui.domain.repository.VoiceStatus
 import com.example.appui.ui.theme.Spacing
 import com.example.appui.ui.theme.extendedColors
 import com.example.appui.utils.showToast
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/**
- * Modern voice conversation screen - Single page layout
- */
 @Composable
 fun VoiceScreen(
     agentId: String? = null,
@@ -67,7 +65,7 @@ fun VoiceScreen(
         if (allGranted) {
             viewModel.connect(agentId, agentName, enablePcmCapture = true)
         } else {
-            context.showToast("❌ Cần quyền Mic để sử dụng Voice Chat")
+            context.showToast("❌ Cần quyền Microphone để sử dụng")
         }
     }
 
@@ -136,11 +134,11 @@ fun VoiceScreen(
     Scaffold(
         topBar = {
             ModernVoiceTopBar(
-                agentId = agentId,
                 agentName = state.agentName ?: agentName,
                 status = state.status,
-                state = state, // ✅ Thêm
-                viewModel = viewModel, // ✅ Thêm
+                mode = state.mode,
+                state = state,
+                viewModel = viewModel,
                 onNavigateBack = {
                     if (state.status == VoiceStatus.CONNECTED) {
                         handleDisconnect()
@@ -169,15 +167,15 @@ fun VoiceScreen(
     }
 }
 
-// ==================== TOP BAR ====================
+// ==================== TOP BAR (Cải thiện) ====================
 
 @Composable
 private fun ModernVoiceTopBar(
-    agentId: String?,
     agentName: String?,
     status: VoiceStatus,
-    state: VoiceUiState, // ✅ Thêm
-    viewModel: VoiceViewModel, // ✅ Thêm
+    mode: VoiceMode,
+    state: VoiceUiState,
+    viewModel: VoiceViewModel,
     onNavigateBack: () -> Unit
 ) {
     CenterAlignedTopAppBar(
@@ -187,31 +185,41 @@ private fun ModernVoiceTopBar(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    "Voice Chat",
+                    agentName ?: "Voice Chat",
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.fillMaxWidth(),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
 
-                agentName?.let {
-                    Text(
-                        it,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                }
+                // ✅ Status text động
+                Text(
+                    when (mode) {
+                        VoiceMode.SPEAKING -> "Đang nói..."
+                        VoiceMode.LISTENING -> "Đang nghe..."
+                        else -> when (status) {
+                            VoiceStatus.CONNECTED -> "Đã kết nối"
+                            VoiceStatus.CONNECTING -> "Đang kết nối..."
+                            VoiceStatus.DISCONNECTED -> "Ngắt kết nối"
+                        }
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = when (mode) {
+                        VoiceMode.SPEAKING -> MaterialTheme.extendedColors.success
+                        VoiceMode.LISTENING -> MaterialTheme.extendedColors.info
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
             }
         },
         navigationIcon = {
             IconButton(onClick = onNavigateBack) {
-                Icon(Icons.Default.ArrowBack, "Back")
+                Icon(Icons.Default.ArrowBack, "Quay lại")
             }
         },
-        // ✅ 2 NÚT COMPACT + STATUS
         actions = {
-            // ✅ MUTE BUTTON
+            // ✅ COMPACT MUTE BUTTON
             AnimatedVisibility(
                 visible = status == VoiceStatus.CONNECTED,
                 enter = fadeIn() + scaleIn(),
@@ -219,11 +227,12 @@ private fun ModernVoiceTopBar(
             ) {
                 CompactMuteButton(
                     isMuted = state.micMuted,
+                    isEffectiveMuted = state.isEffectiveMicMuted,
                     onClick = { viewModel.toggleMic() }
                 )
             }
 
-            // ✅ MODE SWITCH BUTTON
+            // ✅ COMPACT MODE SWITCH BUTTON
             AnimatedVisibility(
                 visible = status == VoiceStatus.CONNECTED,
                 enter = fadeIn() + scaleIn(),
@@ -241,49 +250,132 @@ private fun ModernVoiceTopBar(
                 )
             }
 
-            // ✅ STATUS BADGE
-            Spacer(modifier = Modifier.width(4.dp))
-            Surface(
-                shape = MaterialTheme.shapes.small,
-                color = when (status) {
-                    VoiceStatus.CONNECTED -> MaterialTheme.colorScheme.primaryContainer
-                    VoiceStatus.CONNECTING -> MaterialTheme.colorScheme.secondaryContainer
-                    VoiceStatus.DISCONNECTED -> MaterialTheme.colorScheme.surfaceVariant
-                }
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(
-                                when (status) {
-                                    VoiceStatus.CONNECTED -> MaterialTheme.extendedColors.success
-                                    VoiceStatus.CONNECTING -> MaterialTheme.extendedColors.warning
-                                    VoiceStatus.DISCONNECTED -> MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                            )
-                    )
-                    Text(
-                        when (status) {
-                            VoiceStatus.CONNECTED -> "On"
-                            VoiceStatus.CONNECTING -> "..."
-                            VoiceStatus.DISCONNECTED -> "Off"
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
+            Spacer(modifier = Modifier.width(8.dp))
         },
         colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
             containerColor = MaterialTheme.colorScheme.surface
         )
     )
+}
+
+// ==================== COMPACT BUTTONS ====================
+
+@Composable
+private fun CompactMuteButton(
+    isMuted: Boolean,
+    isEffectiveMuted: Boolean,
+    onClick: () -> Unit
+) {
+    val backgroundColor by animateColorAsState(
+        targetValue = if (isEffectiveMuted) MaterialTheme.colorScheme.error
+        else MaterialTheme.extendedColors.success,
+        animationSpec = tween(300),
+        label = "compact_mute_bg"
+    )
+
+    val scale by animateFloatAsState(
+        targetValue = if (isEffectiveMuted) 0.9f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "compact_mute_scale"
+    )
+
+    val infiniteTransition = rememberInfiniteTransition(label = "mute_pulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.8f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = EaseInOutCubic),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse_alpha"
+    )
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = Modifier
+            .padding(horizontal = 4.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Surface(
+            modifier = Modifier
+                .size(36.dp)
+                .graphicsLayer(scaleX = scale, scaleY = scale),
+            shape = CircleShape,
+            color = backgroundColor.copy(alpha = if (isEffectiveMuted) pulseAlpha else 0.2f)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = if (isEffectiveMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = backgroundColor
+                )
+            }
+        }
+
+        Text(
+            text = if (isEffectiveMuted) "Tắt" else "Bật",
+            style = MaterialTheme.typography.labelSmall,
+            fontSize = 9.sp,
+            color = backgroundColor,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+private fun CompactModeSwitchButton(
+    currentMode: ConversationControlMode,
+    onClick: () -> Unit
+) {
+    val isFullDuplex = currentMode == ConversationControlMode.FULL_DUPLEX
+    val backgroundColor = if (isFullDuplex) MaterialTheme.extendedColors.info else Color(0xFF6B4EFF)
+
+    val rotation by animateFloatAsState(
+        targetValue = if (isFullDuplex) 0f else 180f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "compact_mode_rotation"
+    )
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = Modifier
+            .padding(horizontal = 4.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Surface(
+            modifier = Modifier.size(36.dp),
+            shape = CircleShape,
+            color = backgroundColor.copy(alpha = 0.2f)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = if (isFullDuplex) Icons.Default.RecordVoiceOver else Icons.Default.TouchApp,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(18.dp)
+                        .graphicsLayer(rotationZ = rotation),
+                    tint = backgroundColor
+                )
+            }
+        }
+
+        Text(
+            text = if (isFullDuplex) "Tự động" else "PTT",
+            style = MaterialTheme.typography.labelSmall,
+            fontSize = 9.sp,
+            color = backgroundColor,
+            fontWeight = FontWeight.Bold
+        )
+    }
 }
 
 // ==================== DISCONNECTED VIEW ====================
@@ -310,7 +402,7 @@ private fun DisconnectedView(
         Spacer(modifier = Modifier.height(Spacing.Medium))
 
         Text(
-            "Not Connected",
+            "Chưa kết nối",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold
         )
@@ -318,7 +410,7 @@ private fun DisconnectedView(
         Spacer(modifier = Modifier.height(Spacing.Small))
 
         Text(
-            "Tap the button below to start voice chat",
+            "Nhấn nút bên dưới để bắt đầu cuộc trò chuyện",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -333,7 +425,7 @@ private fun DisconnectedView(
         ) {
             Icon(Icons.Default.Phone, contentDescription = null)
             Spacer(modifier = Modifier.width(Spacing.Small))
-            Text("Connect", style = MaterialTheme.typography.titleMedium)
+            Text("Kết nối", style = MaterialTheme.typography.titleMedium)
         }
     }
 }
@@ -357,7 +449,7 @@ private fun ConnectingView(modifier: Modifier = Modifier) {
         Spacer(modifier = Modifier.height(Spacing.Large))
 
         Text(
-            "Connecting...",
+            "Đang kết nối...",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
@@ -365,14 +457,14 @@ private fun ConnectingView(modifier: Modifier = Modifier) {
         Spacer(modifier = Modifier.height(Spacing.Small))
 
         Text(
-            "Please wait while we establish connection",
+            "Vui lòng chờ trong giây lát",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
 
-// ==================== CONNECTED SINGLE PAGE VIEW ====================
+// ==================== CONNECTED VIEW (giữ nguyên phần còn lại) ====================
 
 @Composable
 private fun ConnectedSinglePageView(
@@ -380,32 +472,181 @@ private fun ConnectedSinglePageView(
     viewModel: VoiceViewModel,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier.fillMaxSize()
-    ) {
-        AudioVisualizationSection(
-            state = state,
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.35f)
-        )
+    val messages by viewModel.conversationMessages.collectAsState()
+    val lastMessage = remember(messages) { messages.lastOrNull() }
+    var showMicPrompt by remember { mutableStateOf(false) }
 
-        ConversationSection(
-            viewModel = viewModel,
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-        )
+    // ✅ LOGIC 1: PTT Auto-unmute sau khi agent nói xong
+    LaunchedEffect(lastMessage?.text, state.conversationMode) {
+        if (lastMessage != null &&
+            lastMessage.speaker == Speaker.AGENT &&
+            state.conversationMode == ConversationControlMode.PTT) {
 
-        ControlsSection(
-            state = state,
-            viewModel = viewModel,
-            modifier = Modifier.fillMaxWidth()
-        )
+            val textLength = lastMessage.text.length
+            val waitDuration = when {
+                textLength < 50 -> 1000L
+                textLength < 150 -> 1500L
+                else -> 2000L
+            }
+
+            delay(waitDuration)
+
+            if (state.conversationMode == ConversationControlMode.PTT &&
+                (state.micMuted || state.isEffectiveMicMuted)) {
+                viewModel.toggleMic()
+            }
+        }
+    }
+
+    // ✅ LOGIC 2: PTT Auto-unmute khi vào LISTENING mode mà agent không nói
+    LaunchedEffect(state.mode, state.conversationMode, state.isEffectiveMicMuted) {
+        if (state.mode == VoiceMode.LISTENING &&
+            state.conversationMode == ConversationControlMode.PTT &&
+            state.isEffectiveMicMuted) {
+
+            // Đợi 2 giây
+            delay(2000L)
+
+            // Check lại sau 2 giây
+            if (state.mode == VoiceMode.LISTENING &&
+                state.conversationMode == ConversationControlMode.PTT &&
+                state.isEffectiveMicMuted) {
+                // Vẫn đang ở LISTENING + PTT + mic tắt → Tự động bật mic
+                viewModel.toggleMic()
+            }
+        }
+    }
+
+    // ✅ LOGIC 3: Mic Prompt cho cả 2 chế độ (sau 2.5s)
+    LaunchedEffect(state.mode, state.isEffectiveMicMuted) {
+        if (state.mode == VoiceMode.LISTENING && state.isEffectiveMicMuted) {
+            showMicPrompt = false
+            delay(2500L)
+
+            if (state.mode == VoiceMode.LISTENING && state.isEffectiveMicMuted) {
+                showMicPrompt = true
+            }
+        } else {
+            showMicPrompt = false
+        }
+    }
+
+    Box(modifier = modifier) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            AudioVisualizationSection(
+                state = state,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.35f)
+            )
+
+            ConversationSection(
+                viewModel = viewModel,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            )
+
+            ControlsSection(
+                state = state,
+                viewModel = viewModel,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // ✅ MIC PROMPT SNACKBAR
+        AnimatedVisibility(
+            visible = showMicPrompt,
+            enter = slideInVertically(
+                initialOffsetY = { it },
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium
+                )
+            ) + fadeIn(),
+            exit = slideOutVertically(
+                targetOffsetY = { it },
+                animationSpec = tween(300)
+            ) + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 80.dp)
+        ) {
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.inverseSurface,
+                tonalElevation = 6.dp,
+                shadowElevation = 8.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .widthIn(max = 400.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.MicOff,
+                        null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(24.dp)
+                    )
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            "Mic đang tắt",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.inverseOnSurface
+                        )
+                        Text(
+                            when (state.conversationMode) {
+                                ConversationControlMode.PTT -> "Bật mic để bắt đầu nói?"
+                                ConversationControlMode.FULL_DUPLEX -> "Bật mic để AI nghe bạn?"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.8f)
+                        )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(
+                            onClick = { showMicPrompt = false },
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.inverseOnSurface
+                            )
+                        ) {
+                            Text("Bỏ qua", fontSize = 13.sp)
+                        }
+
+                        FilledTonalButton(
+                            onClick = {
+                                viewModel.toggleMic()
+                                showMicPrompt = false
+                            },
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.extendedColors.info,
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Icon(
+                                Icons.Default.Mic,
+                                null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("Bật", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
-// ==================== 1️⃣ AUDIO VISUALIZATION SECTION ====================
 
 @Composable
 private fun AudioVisualizationSection(
@@ -421,7 +662,7 @@ private fun AudioVisualizationSection(
             verticalArrangement = Arrangement.spacedBy(Spacing.Small)
         ) {
             CompactWaveformCard(
-                title = "🎤 You",
+                title = "🎤 Bạn",
                 pcmData = state.micPcmData,
                 color = MaterialTheme.colorScheme.primary,
                 isMuted = state.isEffectiveMicMuted,
@@ -476,7 +717,7 @@ private fun CompactWaveformCard(
                         color = MaterialTheme.extendedColors.warning.copy(alpha = 0.2f)
                     ) {
                         Text(
-                            "MUTED",
+                            "TẮT",
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.extendedColors.warning,
@@ -547,12 +788,6 @@ private fun WaveformVisualization(
     pcmData: PcmData,
     color: Color
 ) {
-    val animatedAlpha by animateFloatAsState(
-        targetValue = 1f,
-        animationSpec = tween(durationMillis = 100),
-        label = "waveform_alpha"
-    )
-
     Canvas(modifier = Modifier.fillMaxSize()) {
         val samples = pcmData.samples
         if (samples.isEmpty()) return@Canvas
@@ -583,7 +818,7 @@ private fun WaveformVisualization(
             val x = i * (barWidth + barSpacing)
 
             drawRoundRect(
-                color = color.copy(alpha = animatedAlpha),
+                color = color,
                 topLeft = Offset(x, (height - barHeight) / 2),
                 size = androidx.compose.ui.geometry.Size(barWidth, barHeight),
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidth / 2, barWidth / 2)
@@ -591,8 +826,6 @@ private fun WaveformVisualization(
         }
     }
 }
-
-// ==================== 2️⃣ CONVERSATION SECTION ====================
 
 @Composable
 private fun ConversationSection(
@@ -603,7 +836,6 @@ private fun ConversationSection(
     val listState = rememberLazyListState()
 
     LaunchedEffect(messages.size) {
-        Log.d("VoiceScreen", "📊 Messages: ${messages.size}")
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
         }
@@ -629,12 +861,12 @@ private fun ConversationSection(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                     )
                     Text(
-                        "No conversation yet",
+                        "Chưa có cuộc trò chuyện",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                     )
                     Text(
-                        "Start talking to begin",
+                        "Bắt đầu nói để trò chuyện",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                     )
@@ -697,7 +929,7 @@ private fun ConversationMessageBubble(message: ConversationMessage) {
                         style = MaterialTheme.typography.labelMedium
                     )
                     Text(
-                        if (isUser) "You" else "Agent",
+                        if (isUser) "Bạn" else "Agent",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = if (isUser) {
@@ -723,8 +955,6 @@ private fun ConversationMessageBubble(message: ConversationMessage) {
         }
     }
 }
-
-// ==================== 3️⃣ CONTROLS SECTION ====================
 
 @Composable
 private fun ControlsSection(
@@ -752,7 +982,7 @@ private fun ControlsSection(
                     value = textInput,
                     onValueChange = { textInput = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Type message...") },
+                    placeholder = { Text("Nhập tin nhắn...") },
                     singleLine = true,
                     shape = MaterialTheme.shapes.medium
                 )
@@ -766,122 +996,12 @@ private fun ControlsSection(
                     },
                     enabled = textInput.isNotBlank()
                 ) {
-                    Icon(Icons.Default.Send, contentDescription = "Send")
+                    Icon(Icons.Default.Send, contentDescription = "Gửi")
                 }
             }
         }
     }
 }
-
-
-// ✅ COMPACT BUTTONS (TopBar size)
-
-@Composable
-private fun CompactMuteButton(
-    isMuted: Boolean,
-    onClick: () -> Unit
-) {
-    val backgroundColor by animateColorAsState(
-        targetValue = if (isMuted) MaterialTheme.colorScheme.error else MaterialTheme.extendedColors.success,
-        animationSpec = tween(300),
-        label = "compact_mute_bg"
-    )
-
-    val scale by animateFloatAsState(
-        targetValue = if (isMuted) 0.9f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "compact_mute_scale"
-    )
-
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-        modifier = Modifier
-            .padding(horizontal = 4.dp)
-            .clickable(onClick = onClick)
-    ) {
-        Surface(
-            modifier = Modifier
-                .size(36.dp)
-                .graphicsLayer(scaleX = scale, scaleY = scale),
-            shape = CircleShape,
-            color = backgroundColor.copy(alpha = 0.2f)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = backgroundColor
-                )
-            }
-        }
-
-        Text(
-            text = if (isMuted) "Off" else "On",
-            style = MaterialTheme.typography.labelSmall,
-            fontSize = 9.sp,
-            color = backgroundColor,
-            fontWeight = FontWeight.Bold
-        )
-    }
-}
-
-@Composable
-private fun CompactModeSwitchButton(
-    currentMode: ConversationControlMode,
-    onClick: () -> Unit
-) {
-    val isFullDuplex = currentMode == ConversationControlMode.FULL_DUPLEX
-    val backgroundColor = if (isFullDuplex) MaterialTheme.extendedColors.info else Color(0xFF6B4EFF)
-
-    val rotation by animateFloatAsState(
-        targetValue = if (isFullDuplex) 0f else 180f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "compact_mode_rotation"
-    )
-
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-        modifier = Modifier
-            .padding(horizontal = 4.dp)
-            .clickable(onClick = onClick)
-    ) {
-        Surface(
-            modifier = Modifier.size(36.dp),
-            shape = CircleShape,
-            color = backgroundColor.copy(alpha = 0.2f)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = if (isFullDuplex) Icons.Default.RecordVoiceOver else Icons.Default.TouchApp,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(18.dp)
-                        .graphicsLayer(rotationZ = rotation),
-                    tint = backgroundColor
-                )
-            }
-        }
-
-        Text(
-            text = if (isFullDuplex) "FD" else "PTT",
-            style = MaterialTheme.typography.labelSmall,
-            fontSize = 9.sp,
-            color = backgroundColor,
-            fontWeight = FontWeight.Bold
-        )
-    }
-}
-
-// ==================== SAVE DIALOG ====================
 
 @Composable
 fun SaveConversationDialog(
@@ -913,7 +1033,11 @@ fun SaveConversationDialog(
             }
         },
         title = {
-            Text("Lưu cuộc hội thoại?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(
+                "Lưu cuộc hội thoại?",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -923,7 +1047,9 @@ fun SaveConversationDialog(
                         color = MaterialTheme.colorScheme.primaryContainer
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -943,12 +1069,21 @@ fun SaveConversationDialog(
                     color = MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Số tin nhắn", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.primaryContainer) {
+                        Text(
+                            "Số tin nhắn",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Surface(
+                            shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
                             Text(
                                 "$messageCount",
                                 style = MaterialTheme.typography.labelLarge,
@@ -971,7 +1106,10 @@ fun SaveConversationDialog(
                         shape = MaterialTheme.shapes.medium
                     )
                 } else {
-                    TextButton(onClick = { showTitleInput = true }, modifier = Modifier.fillMaxWidth()) {
+                    TextButton(
+                        onClick = { showTitleInput = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         Icon(Icons.Default.Edit, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("Thêm tiêu đề")
@@ -988,7 +1126,9 @@ fun SaveConversationDialog(
         confirmButton = {
             Button(
                 onClick = { onSave(title.ifBlank { null }) },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.extendedColors.success)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.extendedColors.success
+                )
             ) {
                 Icon(Icons.Default.Save, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
@@ -997,10 +1137,15 @@ fun SaveConversationDialog(
         },
         dismissButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onDismiss) { Text("Hủy") }
+                TextButton(onClick = onDismiss) {
+                    Text("Hủy")
+                }
+
                 OutlinedButton(
                     onClick = onDiscard,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
                 ) {
                     Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))

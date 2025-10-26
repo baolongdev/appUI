@@ -43,7 +43,7 @@ fun MyAgentsContent(
     detailError: String?,
     onOpenAgent: (String) -> Unit,
     onPlayAgent: (String) -> Unit,
-    onAvatarView: (String, String?) -> Unit, // ✅ FIXED: (agentId, agentName)
+    onAvatarView: (String, String?) -> Unit,
     onToggleFavorite: (String, Boolean) -> Unit,
     onCloseDetail: () -> Unit
 ) {
@@ -123,7 +123,7 @@ fun MyAgentsContent(
                 favorites = favoritesLocal,
                 onOpenAgent = onOpenAgent,
                 onPlayAgent = onPlayAgent,
-                onAvatarView = { agentId, agentName -> // ✅ FIXED: Pass both
+                onAvatarView = { agentId, agentName ->
                     Log.d("MyAgentsContent", "🎭 Avatar: id=$agentId, name=$agentName")
                     onAvatarView(agentId, agentName)
                 },
@@ -134,6 +134,7 @@ fun MyAgentsContent(
             )
         }
 
+        // Scrim overlay
         AnimatedVisibility(
             visible = isPanelOpen,
             enter = fadeIn(tween(180)),
@@ -151,6 +152,7 @@ fun MyAgentsContent(
             )
         }
 
+        // Agent detail panel (right sidebar)
         val panelWidth = 420.dp
         val density = LocalDensity.current
 

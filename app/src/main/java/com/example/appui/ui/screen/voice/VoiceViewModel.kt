@@ -40,7 +40,7 @@ class VoiceViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(VoiceUiState())
     val uiState: StateFlow<VoiceUiState> = _uiState.asStateFlow()
 
-    // ✅ FIXED: Use StateFlow thay vì mutableListOf để UI tự động update
+    // ✅ FIXED: Use StateFlow for conversation messages
     private val _conversationMessages = MutableStateFlow<List<ConversationMessage>>(emptyList())
     val conversationMessages: StateFlow<List<ConversationMessage>> = _conversationMessages.asStateFlow()
 
@@ -78,6 +78,7 @@ class VoiceViewModel @Inject constructor(
     fun connect(agentId: String? = null, agentName: String? = null, enablePcmCapture: Boolean = true) {
         viewModelScope.launch {
             val currentStatus = _uiState.value.status
+
             if (currentStatus in listOf(VoiceStatus.CONNECTED, VoiceStatus.CONNECTING)) {
                 Log.w(TAG, "Connection already active: status=$currentStatus")
                 return@launch
@@ -93,11 +94,9 @@ class VoiceViewModel @Inject constructor(
 
                 Log.d(TAG, "Agent info: id=$currentAgentId, name=$currentAgentName")
 
-                // Start conversation tracking
                 conversationStartTime = System.currentTimeMillis()
                 _conversationMessages.value = emptyList() // ✅ Clear messages
 
-                // Configure audio for voice chat
                 audioSessionManager.enterVoiceSession(
                     maxBoostDb = VOICE_SESSION_BOOST_DB,
                     preferSpeakerForMax = false
@@ -121,7 +120,7 @@ class VoiceViewModel @Inject constructor(
     }
 
     /**
-     * Fetch agent name từ ElevenLabs API
+     * Fetch agent name from ElevenLabs API
      */
     private suspend fun fetchAgentName(agentId: String?): String {
         return try {
@@ -148,6 +147,7 @@ class VoiceViewModel @Inject constructor(
     fun disconnect() {
         viewModelScope.launch {
             val currentStatus = _uiState.value.status
+
             if (currentStatus == VoiceStatus.DISCONNECTED) {
                 Log.d(TAG, "Already disconnected")
                 return@launch
@@ -187,7 +187,7 @@ class VoiceViewModel @Inject constructor(
      */
     suspend fun saveConversation(customTitle: String? = null): Boolean {
         return try {
-            val messages = _conversationMessages.value
+            val messages = _conversationMessages.value // ✅ Get from StateFlow
             if (messages.isEmpty()) {
                 Log.w(TAG, "No messages to save")
                 return false
@@ -217,7 +217,7 @@ class VoiceViewModel @Inject constructor(
      * Check if conversation has content to save.
      */
     fun hasConversationToSave(): Boolean {
-        return _conversationMessages.value.isNotEmpty()
+        return _conversationMessages.value.isNotEmpty() // ✅ Check StateFlow
     }
 
     /**
@@ -238,13 +238,16 @@ class VoiceViewModel @Inject constructor(
     private fun applyEffectiveMicMute() {
         viewModelScope.launch {
             val effectiveMute = _uiState.value.isEffectiveMicMuted
+
             runCatching {
                 repository.setMicMuted(effectiveMute)
+
                 if (effectiveMute) {
                     pcmCaptureManager.pauseMicCapture()
                 } else {
                     pcmCaptureManager.resumeMicCapture()
                 }
+
                 Log.d(TAG, "Effective mic mute applied: $effectiveMute")
             }.onFailure { error ->
                 Log.e(TAG, "Failed to apply mic mute", error)
@@ -336,12 +339,11 @@ class VoiceViewModel @Inject constructor(
                 _uiState.update { it.copy(mode = mode) }
                 updateMicActiveState(mode)
 
+                // ✅ Boost media when agent speaks
                 if (mode == VoiceMode.SPEAKING) {
-                    audioSessionManager.enterVoiceSession(
-                        maxBoostDb = VOICE_SESSION_BOOST_DB,
-                        preferSpeakerForMax = false
+                    audioSessionManager.enterMediaLoudSession(
+                        maxBoostDb = MEDIA_SESSION_BOOST_DB
                     )
-//                    audioSessionManager.enterMediaLoudSession(maxBoostDb = MEDIA_SESSION_BOOST_DB)
                 }
             }
         }
@@ -455,7 +457,7 @@ class VoiceViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "VoiceViewModel"
-        private const val VOICE_SESSION_BOOST_DB = 24
-        private const val MEDIA_SESSION_BOOST_DB = 24
+        private const val VOICE_SESSION_BOOST_DB = 20
+        private const val MEDIA_SESSION_BOOST_DB = 20
     }
 }

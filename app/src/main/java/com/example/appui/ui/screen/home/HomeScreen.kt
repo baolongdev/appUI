@@ -1,20 +1,22 @@
 package com.example.appui.ui.screen.home
 
+import android.content.Context
 import android.util.Log
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Logout
-import androidx.compose.material.icons.filled.Upgrade
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.appui.ui.components.SpotlightTutorial
+import com.example.appui.ui.components.TutorialStep
+import com.example.appui.ui.components.SpotlightShape
 import com.example.appui.ui.screen.agents.AgentsViewModel
 import com.example.appui.ui.screen.history.ConversationHistoryContent
 import com.example.appui.ui.screen.home.components.Sidebar
@@ -39,8 +41,20 @@ fun HomeScreen(
     val homeState by viewModel.ui.collectAsState()
     val agentsState by agentsViewModel.ui.collectAsState()
 
-    // ✅ THÊM: Exit confirmation dialog state
+    // Tutorial state
+    val context = LocalContext.current
+    val prefs = remember {
+        context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+    }
+    var showTutorial by remember { mutableStateOf(false) }
     var showExitDialog by remember { mutableStateOf(false) }
+
+    // Check first time
+    LaunchedEffect(Unit) {
+        if (!prefs.getBoolean("home_tutorial_shown", false)) {
+            showTutorial = true
+        }
+    }
 
     Box(Modifier.fillMaxSize()) {
         HomeSidebar(
@@ -50,8 +64,10 @@ fun HomeScreen(
             onSectionSelected = viewModel::selectSection,
             onToggleSidebar = viewModel::toggleSidebar,
             onSettings = onNavigateToUpdate,
-            onLogout = { showExitDialog = true }, // ✅ Show dialog instead
-            hasUpdate = homeState.hasUpdate
+            onLogout = { showExitDialog = true },
+            hasUpdate = homeState.hasUpdate,
+            showTutorial = showTutorial,
+            onShowTutorial = { showTutorial = true }
         )
 
         HomeScaffold(
@@ -76,7 +92,6 @@ fun HomeScreen(
             )
         }
 
-        // ✅ THÊM: Exit confirmation dialog
         if (showExitDialog) {
             AlertDialog(
                 onDismissRequest = { showExitDialog = false },
@@ -114,10 +129,51 @@ fun HomeScreen(
                 }
             )
         }
+
+        // ✅ SPOTLIGHT TUTORIAL
+        if (showTutorial) {
+            SpotlightTutorial(
+                steps = listOf(
+                    TutorialStep(
+                        targetKey = "home_section",
+                        title = "Trang chủ",
+                        description = "Đây là trang chủ với tất cả AI agents. Nhấn vào để xem danh sách và bắt đầu trò chuyện.",
+                        icon = Icons.Default.Home,
+                        shape = SpotlightShape.RoundedRectangle
+                    ),
+                    TutorialStep(
+                        targetKey = "my_agents_section",
+                        title = "My Agents",
+                        description = "Xem và quản lý tất cả AI agents yêu thích của bạn. Bạn có thể đánh dấu yêu thích và truy cập nhanh.",
+                        icon = Icons.Default.Star,
+                        shape = SpotlightShape.RoundedRectangle
+                    ),
+                    TutorialStep(
+                        targetKey = "history_section",
+                        title = "Lịch sử trò chuyện",
+                        description = "Xem lại tất cả cuộc trò chuyện đã lưu. Bạn có thể tiếp tục hoặc xóa các cuộc hội thoại cũ.",
+                        icon = Icons.Default.History,
+                        shape = SpotlightShape.RoundedRectangle
+                    ),
+                    TutorialStep(
+                        targetKey = "settings_button",
+                        title = "Cài đặt",
+                        description = "Tùy chỉnh ứng dụng theo ý bạn. Thay đổi giao diện, cập nhật phiên bản mới và nhiều hơn nữa.",
+                        icon = Icons.Default.Settings,
+                        shape = SpotlightShape.Circle
+                    )
+                ),
+                onComplete = {
+                    showTutorial = false
+                    prefs.edit().putBoolean("home_tutorial_shown", true).apply()
+                }
+            )
+        }
     }
 }
 
-// ✅ THÊM: HomeSidebar function
+// ==================== SIDEBAR ====================
+
 @Composable
 private fun HomeSidebar(
     isOpen: Boolean,
@@ -127,7 +183,9 @@ private fun HomeSidebar(
     onToggleSidebar: () -> Unit,
     onSettings: () -> Unit,
     onLogout: () -> Unit,
-    hasUpdate: Boolean
+    hasUpdate: Boolean,
+    showTutorial: Boolean,
+    onShowTutorial: () -> Unit
 ) {
     val sidebarWidth = 192.dp
     val collapsedWidth = 84.dp
@@ -156,12 +214,15 @@ private fun HomeSidebar(
             onSettings = onSettings,
             onLogout = onLogout,
             isCollapsed = !isOpen,
-            hasUpdate = hasUpdate
+            hasUpdate = hasUpdate,
+            showTutorial = showTutorial,
+            onShowTutorial = onShowTutorial
         )
     }
 }
 
-// ✅ THÊM: UpdateNotificationDialog function
+// ==================== UPDATE DIALOG ====================
+
 @Composable
 private fun UpdateNotificationDialog(
     version: String,
@@ -246,6 +307,8 @@ private fun UpdateNotificationDialog(
         }
     )
 }
+
+// ==================== SCAFFOLD ====================
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

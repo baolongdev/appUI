@@ -23,7 +23,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -41,6 +43,9 @@ import com.example.appui.data.model.ConversationMessage
 import com.example.appui.data.model.Speaker
 import com.example.appui.domain.repository.VoiceStatus
 import com.example.appui.ui.components.RiveAnimation
+import com.example.appui.ui.components.SpotlightTutorial
+import com.example.appui.ui.components.TutorialStep
+import com.example.appui.ui.components.spotlightTarget
 import com.example.appui.ui.screen.voice.ConversationControlMode
 import com.example.appui.ui.screen.voice.VoiceViewModel
 import com.example.appui.ui.theme.extendedColors
@@ -62,13 +67,19 @@ fun AIFaceScreen(
 
     var showBottomSheet by remember { mutableStateOf(false) }
     var showSaveDialog by remember { mutableStateOf(false) }
+    var showTutorial by remember { mutableStateOf(false) }
+    var tutorialCompleted by remember { mutableStateOf(false) } // ✅ THÊM
+    var isFirstTime by remember { mutableStateOf(true) } // ✅ THÊM
 
     val permissionsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val allGranted = permissions.values.all { it }
         if (allGranted) {
-            viewModel.connect(agentId, agentName, enablePcmCapture = true)
+            // ✅ CHỈ connect khi tutorial đã hoàn thành
+            if (tutorialCompleted) {
+                viewModel.connect(agentId, agentName, enablePcmCapture = true)
+            }
         } else {
             Toast.makeText(context, "❌ Cần quyền Microphone để sử dụng", Toast.LENGTH_SHORT).show()
             onClose()
@@ -103,8 +114,24 @@ fun AIFaceScreen(
         }
     }
 
+    // ✅ LOGIC MỚI: Hiện tutorial trước, connect sau
     LaunchedEffect(agentId) {
         if (agentId != null && uiState.status == VoiceStatus.DISCONNECTED) {
+            if (isFirstTime) {
+                // Hiện tutorial trước
+                delay(500)
+                showTutorial = true
+                isFirstTime = false
+            } else {
+                // Không phải lần đầu → connect ngay
+                connectWithPermissionCheck()
+            }
+        }
+    }
+
+    // ✅ Connect sau khi tutorial hoàn thành
+    LaunchedEffect(tutorialCompleted) {
+        if (tutorialCompleted && agentId != null && uiState.status == VoiceStatus.DISCONNECTED) {
             connectWithPermissionCheck()
         }
     }
@@ -133,163 +160,274 @@ fun AIFaceScreen(
         )
     }
 
-    Scaffold(
-        containerColor = Color.Black,
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            uiState.agentName ?: agentName,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                        Text(
-                            when (uiState.mode) {
-                                com.example.appui.domain.repository.VoiceMode.SPEAKING -> "Speaking..."
-                                com.example.appui.domain.repository.VoiceMode.LISTENING -> "Listening..."
-                                else -> when (uiState.status) {
-                                    VoiceStatus.CONNECTED -> "Connected"
-                                    VoiceStatus.CONNECTING -> "Connecting..."
-                                    VoiceStatus.DISCONNECTED -> "Disconnected"
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = Color.Black,
+            topBar = {
+                CenterAlignedTopAppBar(
+                    title = {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                uiState.agentName ?: agentName,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                when (uiState.mode) {
+                                    com.example.appui.domain.repository.VoiceMode.SPEAKING -> "Đang nói..."
+                                    com.example.appui.domain.repository.VoiceMode.LISTENING -> "Đang nghe..."
+                                    else -> when (uiState.status) {
+                                        VoiceStatus.CONNECTED -> "Đã kết nối"
+                                        VoiceStatus.CONNECTING -> "Đang kết nối..."
+                                        VoiceStatus.DISCONNECTED -> if (showTutorial) "Hướng dẫn sử dụng" else "Ngắt kết nối"
+                                    }
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = when (uiState.mode) {
+                                    com.example.appui.domain.repository.VoiceMode.SPEAKING -> MaterialTheme.extendedColors.success
+                                    com.example.appui.domain.repository.VoiceMode.LISTENING -> MaterialTheme.extendedColors.info
+                                    else -> if (showTutorial) MaterialTheme.extendedColors.info else Color.Gray
                                 }
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = when (uiState.mode) {
-                                com.example.appui.domain.repository.VoiceMode.SPEAKING -> MaterialTheme.extendedColors.success
-                                com.example.appui.domain.repository.VoiceMode.LISTENING -> MaterialTheme.extendedColors.info
-                                else -> Color.Gray
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = {
+                            if (showTutorial) {
+                                // Nếu đang tutorial → skip tutorial và connect
+                                showTutorial = false
+                                tutorialCompleted = true
+                            } else {
+                                handleClose()
                             }
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = { handleClose() }) {
-                        Icon(Icons.Default.Close, "Close", tint = Color.White)
-                    }
-                },
-                // ✅ 2 NÚT COMPACT + NÚT DETAILS
-                actions = {
-                    // ✅ MUTE BUTTON
-                    AnimatedVisibility(
-                        visible = uiState.status == VoiceStatus.CONNECTED,
-                        enter = fadeIn() + scaleIn(),
-                        exit = fadeOut() + scaleOut()
-                    ) {
-                        CompactMuteButton(
-                            isMuted = uiState.micMuted,
-                            onClick = { viewModel.toggleMic() }
-                        )
-                    }
-
-                    // ✅ MODE SWITCH BUTTON
-                    AnimatedVisibility(
-                        visible = uiState.status == VoiceStatus.CONNECTED,
-                        enter = fadeIn() + scaleIn(),
-                        exit = fadeOut() + scaleOut()
-                    ) {
-                        CompactModeSwitchButton(
-                            currentMode = uiState.conversationMode,
-                            onClick = {
-                                val newMode = when (uiState.conversationMode) {
-                                    ConversationControlMode.FULL_DUPLEX -> ConversationControlMode.PTT
-                                    ConversationControlMode.PTT -> ConversationControlMode.FULL_DUPLEX
-                                }
-                                viewModel.setConversationMode(newMode)
+                        }) {
+                            Icon(
+                                if (showTutorial) Icons.Default.Close else Icons.Default.ArrowBack,
+                                if (showTutorial) "Bỏ qua" else "Đóng",
+                                tint = Color.White
+                            )
+                        }
+                    },
+                    actions = {
+                        // ✅ CHỈ hiện khi đã connect
+                        if (uiState.status == VoiceStatus.CONNECTED) {
+                            // Mute Button with Spotlight
+                            AnimatedVisibility(
+                                visible = true,
+                                enter = fadeIn() + scaleIn(),
+                                exit = fadeOut() + scaleOut()
+                            ) {
+                                CompactMuteButton(
+                                    isMuted = uiState.micMuted,
+                                    isEffectiveMuted = uiState.isEffectiveMicMuted,
+                                    onClick = { viewModel.toggleMic() },
+                                    modifier = Modifier.spotlightTarget("mic_button")
+                                )
                             }
-                        )
-                    }
 
-                    // ✅ DETAILS BUTTON
-                    IconButton(onClick = { showBottomSheet = true }) {
-                        Icon(Icons.Default.ExpandLess, "Details", tint = Color.White)
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = Color.Black
+                            // Mode Switch Button with Spotlight
+                            AnimatedVisibility(
+                                visible = true,
+                                enter = fadeIn() + scaleIn(),
+                                exit = fadeOut() + scaleOut()
+                            ) {
+                                CompactModeSwitchButton(
+                                    currentMode = uiState.conversationMode,
+                                    onClick = {
+                                        val newMode = when (uiState.conversationMode) {
+                                            ConversationControlMode.FULL_DUPLEX -> ConversationControlMode.PTT
+                                            ConversationControlMode.PTT -> ConversationControlMode.FULL_DUPLEX
+                                        }
+                                        viewModel.setConversationMode(newMode)
+                                    },
+                                    modifier = Modifier.spotlightTarget("mode_button")
+                                )
+                            }
+
+                            // Details Button with Spotlight
+                            IconButton(
+                                onClick = { showBottomSheet = true },
+                                modifier = Modifier.spotlightTarget("details_button")
+                            ) {
+                                Icon(Icons.Default.MoreVert, "Chi tiết", tint = Color.White)
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = Color.Black
+                    )
                 )
-            )
-        }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .background(Color.Black)
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxSize()
+            }
+        ) { paddingValues ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .background(Color.Black)
             ) {
-                AIFaceWithRive(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    viewModel = viewModel
-                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    // AI Face with Spotlight
+                    AIFaceWithRive(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .spotlightTarget("ai_face"),
+                        viewModel = viewModel
+                    )
 
-                TypingTextDisplay(
+                    // Text Display with Spotlight
+                    TypingTextDisplay(
+                        viewModel = viewModel,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp, vertical = 16.dp)
+                            .spotlightTarget("text_display")
+                    )
+                }
+            }
+        }
+
+        if (showBottomSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { showBottomSheet = false },
+                sheetState = sheetState,
+                containerColor = Color(0xFF0A0A0A),
+                dragHandle = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Surface(
+                            modifier = Modifier
+                                .width(40.dp)
+                                .height(4.dp),
+                            shape = MaterialTheme.shapes.extraLarge,
+                            color = Color.Gray
+                        ) {}
+                    }
+                }
+            ) {
+                BottomSheetContent(
                     viewModel = viewModel,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 16.dp)
+                    state = uiState,
+                    onClose = {
+                        scope.launch {
+                            sheetState.hide()
+                            showBottomSheet = false
+                        }
+                    }
                 )
             }
         }
-    }
 
-    if (showBottomSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showBottomSheet = false },
-            sheetState = sheetState,
-            containerColor = Color(0xFF0A0A0A),
-            dragHandle = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Surface(
-                        modifier = Modifier
-                            .width(40.dp)
-                            .height(4.dp),
-                        shape = MaterialTheme.shapes.extraLarge,
-                        color = Color.Gray
-                    ) {}
-                }
-            }
-        ) {
-            BottomSheetContent(
-                viewModel = viewModel,
-                state = uiState,
-                onClose = {
-                    scope.launch {
-                        sheetState.hide()
-                        showBottomSheet = false
-                    }
+        // ✅ SPOTLIGHT TUTORIAL với callback
+        if (showTutorial) {
+            SpotlightTutorial(
+                steps = getAIFaceTutorialSteps(),
+                onComplete = {
+                    showTutorial = false
+                    tutorialCompleted = true // ✅ Đánh dấu hoàn thành
                 }
             )
+        }
+
+        // ✅ Loading overlay khi đang connecting
+        AnimatedVisibility(
+            visible = uiState.status == VoiceStatus.CONNECTING,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.8f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(56.dp),
+                        strokeWidth = 5.dp,
+                        color = MaterialTheme.extendedColors.info
+                    )
+                    Text(
+                        "Đang kết nối với Agent...",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        "Vui lòng chờ trong giây lát",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
+                }
+            }
         }
     }
 }
 
-// ==================== COMPACT BUTTONS (TopBar) ====================
+// ==================== TUTORIAL STEPS ====================
+
+private fun getAIFaceTutorialSteps() = listOf(
+    TutorialStep(
+        targetKey = "ai_face",
+        title = "Giao diện AI Face",
+        description = "Đây là khuôn mặt AI của bạn. Miệng sẽ chuyển động khi Agent nói, và bạn sẽ thấy hiệu ứng sóng âm thanh khi bạn nói.",
+        icon = Icons.Default.Face
+    ),
+    TutorialStep(
+        targetKey = "text_display",
+        title = "Hiển thị văn bản",
+        description = "Phần này hiển thị nội dung cuộc trò chuyện theo thời gian thực. Văn bản sẽ được hiển thị từng ký tự với hiệu ứng typing đẹp mắt.",
+        icon = Icons.Default.ChatBubble
+    ),
+    TutorialStep(
+        targetKey = "mic_button",
+        title = "Nút Microphone",
+        description = "Bật/tắt microphone để điều khiển AI có nghe bạn hay không. Badge bên dưới hiển thị trạng thái mic hiện tại.",
+        icon = Icons.Default.Mic
+    ),
+    TutorialStep(
+        targetKey = "mode_button",
+        title = "Chế độ hội thoại",
+        description = "Chuyển đổi giữa 2 chế độ:\n• Tự động: AI luôn lắng nghe bạn\n• PTT: Nhấn giữ để nói",
+        icon = Icons.Default.RecordVoiceOver
+    ),
+    TutorialStep(
+        targetKey = "details_button",
+        title = "Chi tiết cuộc trò chuyện",
+        description = "Xem lịch sử tin nhắn đầy đủ, biểu đồ âm thanh trực quan, và các thông tin chi tiết về cuộc trò chuyện.",
+        icon = Icons.Default.MoreVert
+    )
+)
+
+// ==================== COMPACT BUTTONS ====================
 
 @Composable
 private fun CompactMuteButton(
     isMuted: Boolean,
-    onClick: () -> Unit
+    isEffectiveMuted: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val backgroundColor by animateColorAsState(
-        targetValue = if (isMuted) MaterialTheme.colorScheme.error else MaterialTheme.extendedColors.success,
+        targetValue = if (isEffectiveMuted) MaterialTheme.colorScheme.error
+        else MaterialTheme.extendedColors.success,
         animationSpec = tween(300),
         label = "compact_mute_bg"
     )
 
     val scale by animateFloatAsState(
-        targetValue = if (isMuted) 0.9f else 1f,
+        targetValue = if (isEffectiveMuted) 0.9f else 1f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMedium
@@ -297,10 +435,21 @@ private fun CompactMuteButton(
         label = "compact_mute_scale"
     )
 
+    val infiniteTransition = rememberInfiniteTransition(label = "mute_pulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.8f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = EaseInOutCubic),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse_alpha"
+    )
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp),
-        modifier = Modifier
+        modifier = modifier
             .padding(horizontal = 4.dp)
             .clickable(onClick = onClick)
     ) {
@@ -309,11 +458,11 @@ private fun CompactMuteButton(
                 .size(36.dp)
                 .graphicsLayer(scaleX = scale, scaleY = scale),
             shape = CircleShape,
-            color = backgroundColor.copy(alpha = 0.2f)
+            color = backgroundColor.copy(alpha = if (isEffectiveMuted) pulseAlpha else 0.2f)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                    imageVector = if (isEffectiveMuted) Icons.Default.MicOff else Icons.Default.Mic,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                     tint = backgroundColor
@@ -322,7 +471,7 @@ private fun CompactMuteButton(
         }
 
         Text(
-            text = if (isMuted) "Off" else "On",
+            text = if (isEffectiveMuted) "Tắt" else "Bật",
             style = MaterialTheme.typography.labelSmall,
             fontSize = 9.sp,
             color = backgroundColor,
@@ -334,7 +483,8 @@ private fun CompactMuteButton(
 @Composable
 private fun CompactModeSwitchButton(
     currentMode: ConversationControlMode,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val isFullDuplex = currentMode == ConversationControlMode.FULL_DUPLEX
     val backgroundColor = if (isFullDuplex) MaterialTheme.extendedColors.info else Color(0xFF6B4EFF)
@@ -351,7 +501,7 @@ private fun CompactModeSwitchButton(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp),
-        modifier = Modifier
+        modifier = modifier
             .padding(horizontal = 4.dp)
             .clickable(onClick = onClick)
     ) {
@@ -373,7 +523,7 @@ private fun CompactModeSwitchButton(
         }
 
         Text(
-            text = if (isFullDuplex) "FD" else "PTT",
+            text = if (isFullDuplex) "Tự động" else "PTT",
             style = MaterialTheme.typography.labelSmall,
             fontSize = 9.sp,
             color = backgroundColor,
@@ -683,11 +833,53 @@ private fun TypingTextDisplay(
     modifier: Modifier = Modifier
 ) {
     val messages by viewModel.conversationMessages.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
     val lastMessage = remember(messages) { messages.lastOrNull() }
 
     var isTyping by remember { mutableStateOf(false) }
     var visibleText by remember { mutableStateOf("") }
+    var showMicPrompt by remember { mutableStateOf(false) }
 
+    // PTT Auto-unmute
+    LaunchedEffect(lastMessage?.text, uiState.conversationMode) {
+        if (lastMessage != null &&
+            lastMessage.speaker == Speaker.AGENT &&
+            uiState.conversationMode == ConversationControlMode.PTT) {
+
+            val textLength = lastMessage.text.length
+            val waitDuration = when {
+                textLength < 50 -> 1000L
+                textLength < 150 -> 1500L
+                else -> 2000L
+            }
+
+            delay(waitDuration)
+
+            if (uiState.conversationMode == ConversationControlMode.PTT &&
+                (uiState.micMuted || uiState.isEffectiveMicMuted)) {
+                viewModel.toggleMic()
+            }
+        }
+    }
+
+    // Mic Prompt for both modes
+    LaunchedEffect(uiState.mode, uiState.isEffectiveMicMuted) {
+        if (uiState.mode == com.example.appui.domain.repository.VoiceMode.LISTENING &&
+            uiState.isEffectiveMicMuted) {
+
+            showMicPrompt = false
+            delay(2500L)
+
+            if (uiState.mode == com.example.appui.domain.repository.VoiceMode.LISTENING &&
+                uiState.isEffectiveMicMuted) {
+                showMicPrompt = true
+            }
+        } else {
+            showMicPrompt = false
+        }
+    }
+
+    // Typing animation
     LaunchedEffect(lastMessage?.text) {
         if (lastMessage != null) {
             isTyping = true
@@ -700,11 +892,11 @@ private fun TypingTextDisplay(
 
                 for (i in sentence.indices) {
                     visibleText = sentence.substring(0, i + 1)
-                    delay(50)
+                    delay(40)
                 }
 
                 if (sentenceIdx < sentences.size - 1) {
-                    delay(500)
+                    delay(300)
                 }
             }
 
@@ -712,65 +904,252 @@ private fun TypingTextDisplay(
         }
     }
 
-    Surface(
-        modifier = modifier,
-        color = Color(0xFF1A1A1A),
-        shape = MaterialTheme.shapes.large
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(120.dp)
-                .padding(20.dp),
-            contentAlignment = Alignment.Center
+    Box(modifier = modifier) {
+        Surface(
+            color = Color(0xFF1A1A1A),
+            shape = MaterialTheme.shapes.large
         ) {
-            if (lastMessage != null) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        if (lastMessage.speaker == Speaker.AGENT) "🤖 Agent" else "🧑 You",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = if (lastMessage.speaker == Speaker.AGENT) {
-                            MaterialTheme.extendedColors.success
-                        } else {
-                            MaterialTheme.extendedColors.info
-                        }
-                    )
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f, fill = false),
-                        contentAlignment = Alignment.Center
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .padding(20.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (lastMessage != null) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AnimatedVisibility(
+                                visible = isTyping ||
+                                        uiState.mode == com.example.appui.domain.repository.VoiceMode.LISTENING ||
+                                        !uiState.isEffectiveMicMuted,
+                                enter = scaleIn() + fadeIn(),
+                                exit = scaleOut() + fadeOut()
+                            ) {
+                                val dotColor = when {
+                                    isTyping && lastMessage.speaker == Speaker.AGENT ->
+                                        MaterialTheme.extendedColors.success
+                                    uiState.mode == com.example.appui.domain.repository.VoiceMode.LISTENING &&
+                                            uiState.isEffectiveMicMuted ->
+                                        MaterialTheme.colorScheme.error
+                                    !uiState.isEffectiveMicMuted ->
+                                        MaterialTheme.extendedColors.info
+                                    else -> Color.Gray
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(dotColor)
+                                )
+                            }
+
+                            Text(
+                                if (lastMessage.speaker == Speaker.AGENT) "🤖 Agent" else "🧑 Bạn",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = if (lastMessage.speaker == Speaker.AGENT) {
+                                    MaterialTheme.extendedColors.success
+                                } else {
+                                    MaterialTheme.extendedColors.info
+                                }
+                            )
+
+                            AnimatedVisibility(
+                                visible = true,
+                                enter = fadeIn() + expandHorizontally(),
+                                exit = fadeOut() + shrinkHorizontally()
+                            ) {
+                                val isReady = !uiState.isEffectiveMicMuted &&
+                                        uiState.mode == com.example.appui.domain.repository.VoiceMode.LISTENING
+                                val isListeningMuted = uiState.mode == com.example.appui.domain.repository.VoiceMode.LISTENING &&
+                                        uiState.isEffectiveMicMuted
+
+                                Surface(
+                                    shape = MaterialTheme.shapes.small,
+                                    color = when {
+                                        isReady -> MaterialTheme.extendedColors.info.copy(alpha = 0.2f)
+                                        isListeningMuted -> MaterialTheme.colorScheme.error.copy(alpha = 0.2f)
+                                        else -> Color.Gray.copy(alpha = 0.2f)
+                                    }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            if (uiState.isEffectiveMicMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                                            null,
+                                            modifier = Modifier.size(12.dp),
+                                            tint = when {
+                                                isReady -> MaterialTheme.extendedColors.info
+                                                isListeningMuted -> MaterialTheme.colorScheme.error
+                                                else -> Color.Gray
+                                            }
+                                        )
+                                        Text(
+                                            when {
+                                                isReady -> "Sẵn sàng"
+                                                isListeningMuted -> "Mic tắt"
+                                                else -> when (uiState.conversationMode) {
+                                                    ConversationControlMode.PTT -> "Chờ..."
+                                                    ConversationControlMode.FULL_DUPLEX -> "Đang nghe"
+                                                }
+                                            },
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = when {
+                                                isReady -> MaterialTheme.extendedColors.info
+                                                isListeningMuted -> MaterialTheme.colorScheme.error
+                                                else -> Color.Gray
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f, fill = false),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                visibleText + if (isTyping) "▌" else "",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.White,
+                                textAlign = TextAlign.Center,
+                                maxLines = 3,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                } else {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(32.dp),
+                            strokeWidth = 3.dp,
+                            color = MaterialTheme.extendedColors.info
+                        )
                         Text(
-                            visibleText + if (isTyping) "▌" else "",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Color.White,
-                            textAlign = TextAlign.Center,
-                            maxLines = 3,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Visible,
-                            modifier = Modifier.fillMaxWidth()
+                            "Đang chờ cuộc trò chuyện...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.Gray,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                         )
                     }
                 }
-            } else {
-                Text(
-                    "Waiting for conversation...",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Color.Gray,
-                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+            }
+        }
+
+        // Mic Prompt Snackbar
+        AnimatedVisibility(
+            visible = showMicPrompt,
+            enter = slideInVertically(
+                initialOffsetY = { it },
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium
                 )
+            ) + fadeIn(),
+            exit = slideOutVertically(
+                targetOffsetY = { it },
+                animationSpec = tween(300)
+            ) + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 8.dp)
+        ) {
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.inverseSurface,
+                tonalElevation = 6.dp,
+                shadowElevation = 8.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .widthIn(max = 400.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.MicOff,
+                        null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(24.dp)
+                    )
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            "Mic đang tắt",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.inverseOnSurface
+                        )
+                        Text(
+                            when (uiState.conversationMode) {
+                                ConversationControlMode.PTT -> "Bật mic để bắt đầu nói?"
+                                ConversationControlMode.FULL_DUPLEX -> "Bật mic để AI nghe bạn?"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.8f)
+                        )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(
+                            onClick = { showMicPrompt = false },
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.inverseOnSurface
+                            )
+                        ) {
+                            Text("Bỏ qua", fontSize = 13.sp)
+                        }
+
+                        FilledTonalButton(
+                            onClick = {
+                                viewModel.toggleMic()
+                                showMicPrompt = false
+                            },
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.extendedColors.info,
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Icon(
+                                Icons.Default.Mic,
+                                null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("Bật", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
         }
     }
 }
 
-// ==================== SAVE DIALOG & BOTTOM SHEET ====================
-// (Giữ nguyên code cũ cho SaveConversationDialog, BottomSheetContent, v.v...)
+// ==================== SAVE DIALOG ====================
 
 @Composable
 fun SaveConversationDialog(
@@ -925,6 +1304,8 @@ fun SaveConversationDialog(
     )
 }
 
+// ==================== BOTTOM SHEET CONTENT ====================
+
 @Composable
 private fun BottomSheetContent(
     viewModel: VoiceViewModel,
@@ -944,13 +1325,13 @@ private fun BottomSheetContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "Details",
+                "Chi tiết",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
             IconButton(onClick = onClose) {
-                Icon(Icons.Default.ExpandMore, "Close", tint = Color.White)
+                Icon(Icons.Default.ExpandMore, "Đóng", tint = Color.White)
             }
         }
 
@@ -963,14 +1344,14 @@ private fun BottomSheetContent(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                "Audio Activity",
+                "Hoạt động âm thanh",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
 
             CompactWaveformCard(
-                title = "🎤 You",
+                title = "🎤 Bạn",
                 pcmData = state.micPcmData,
                 color = MaterialTheme.extendedColors.info,
                 isMuted = state.isEffectiveMicMuted,
@@ -1118,7 +1499,7 @@ private fun ConversationSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "Conversation",
+                "Cuộc trò chuyện",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
@@ -1135,7 +1516,7 @@ private fun ConversationSection(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                Text("No messages yet", color = Color.Gray)
+                Text("Chưa có tin nhắn", color = Color.Gray)
             }
         } else {
             LazyColumn(
@@ -1177,7 +1558,7 @@ private fun ConversationMessageBubble(message: ConversationMessage) {
         ) {
             Column(modifier = Modifier.padding(10.dp)) {
                 Text(
-                    if (isUser) "🧑 You" else "🤖 Agent",
+                    if (isUser) "🧑 Bạn" else "🤖 Agent",
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
                     color = if (isUser) {

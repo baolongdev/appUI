@@ -3,8 +3,8 @@ package com.example.appui.ui.screen.home.content
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Sort // ✅ AutoMirrored
-import androidx.compose.material.icons.automirrored.filled.ViewList // ✅ AutoMirrored
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -48,7 +48,7 @@ fun AgentsToolbar(
                 value = searchText,
                 onValueChange = onSearchChange,
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Search agents...") },
+                placeholder = { Text("Tìm kiếm agents...") },
                 leadingIcon = {
                     Icon(
                         Icons.Default.Search,
@@ -59,7 +59,7 @@ fun AgentsToolbar(
                 trailingIcon = if (searchText.isNotEmpty()) {
                     {
                         IconButton(onClick = { onSearchChange("") }) {
-                            Icon(Icons.Default.Clear, "Clear")
+                            Icon(Icons.Default.Clear, "Xóa")
                         }
                     }
                 } else null,
@@ -78,7 +78,7 @@ fun AgentsToolbar(
                         onClick = { onViewModeChange(AgentViewMode.CARD) }
                     )
                     ViewModeButton(
-                        icon = Icons.AutoMirrored.Filled.ViewList, // ✅ FIXED
+                        icon = Icons.AutoMirrored.Filled.ViewList,
                         selected = viewMode == AgentViewMode.LIST,
                         onClick = { onViewModeChange(AgentViewMode.LIST) }
                     )
@@ -93,12 +93,12 @@ fun AgentsToolbar(
 
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Small)) {
             FilterTabButton(
-                text = "All",
+                text = "Tất cả",
                 selected = filterTab == AgentFilterTab.ALL,
                 onClick = { onFilterTabChange(AgentFilterTab.ALL) }
             )
             FilterTabButton(
-                text = "Last 7 Days",
+                text = "7 ngày gần đây",
                 selected = filterTab == AgentFilterTab.LAST_7_DAYS,
                 onClick = { onFilterTabChange(AgentFilterTab.LAST_7_DAYS) }
             )
@@ -157,7 +157,7 @@ private fun SortMenuButton(
             onClick = { expanded = true },
             modifier = Modifier.size(48.dp)
         ) {
-            Icon(Icons.AutoMirrored.Filled.Sort, "Sort") // ✅ FIXED
+            Icon(Icons.AutoMirrored.Filled.Sort, "Sắp xếp")
         }
 
         DropdownMenu(
@@ -165,7 +165,7 @@ private fun SortMenuButton(
             onDismissRequest = { expanded = false }
         ) {
             SortMenuItem(
-                text = "Newest First",
+                text = "Mới nhất",
                 icon = Icons.Default.Schedule,
                 selected = currentSort == AgentSortBy.NEWEST,
                 onClick = {
@@ -174,7 +174,7 @@ private fun SortMenuButton(
                 }
             )
             SortMenuItem(
-                text = "Oldest First",
+                text = "Cũ nhất",
                 icon = Icons.Default.History,
                 selected = currentSort == AgentSortBy.OLDEST,
                 onClick = {
@@ -183,7 +183,7 @@ private fun SortMenuButton(
                 }
             )
             SortMenuItem(
-                text = "Name (A-Z)",
+                text = "Tên (A-Z)",
                 icon = Icons.Default.SortByAlpha,
                 selected = currentSort == AgentSortBy.NAME,
                 onClick = {

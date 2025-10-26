@@ -11,52 +11,22 @@ import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
 
-/**
- * Professional audio session manager for voice conversations.
- *
- * Features:
- * - Intelligent device routing (BT/USB/Wired/Speaker)
- * - Mixed mode: BT A2DP (output) + Built-in mic (input)
- * - Audio focus management with ducking prevention
- * - Dynamic audio enhancement (LoudnessEnhancer + DynamicsProcessing)
- * - Automatic volume optimization
- * - Mode-aware session management
- *
- * @property context Application context for audio services
- */
 class AudioSessionManager(private val context: Context) {
 
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as SystemAudioManager
 
-    // Audio focus management
     private var audioFocusRequest: AudioFocusRequest? = null
     private var hasAudioFocus = false
-
-    // Audio enhancement
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private var dynamicsProcessor: DynamicsProcessing? = null
     private var currentBoostDb: Int = DEFAULT_BOOST_DB
-
-    // Session state
     private var preferSpeaker = false
 
-    /**
-     * Enters voice conversation mode with microphone support.
-     *
-     * Configures:
-     * - MODE_IN_COMMUNICATION for echo cancellation
-     * - Voice routing priority: BT SCO → BT A2DP + Built-in mic → USB → Wired → Speaker
-     * - Maximum voice call and music stream volumes
-     * - Audio enhancement boosters
-     *
-     * @param maxBoostDb Loudness boost in dB (0-24)
-     * @param preferSpeakerForMax Prefer built-in speaker for maximum volume
-     */
-    fun enterVoiceSession(maxBoostDb: Int = 18, preferSpeakerForMax: Boolean = false) {
+    fun enterVoiceSession(maxBoostDb: Int = 24, preferSpeakerForMax: Boolean = false) {
         preferSpeaker = preferSpeakerForMax
         currentBoostDb = maxBoostDb.coerceIn(MIN_BOOST_DB, MAX_BOOST_DB)
 
-        Log.i(TAG, "Entering voice session (boost=${currentBoostDb}dB, preferSpeaker=$preferSpeaker)")
+        Log.i(TAG, "🔊 Entering voice session (boost=${currentBoostDb}dB, preferSpeaker=$preferSpeaker)")
 
         runCatching {
             audioManager.mode = SystemAudioManager.MODE_IN_COMMUNICATION
@@ -68,41 +38,49 @@ class AudioSessionManager(private val context: Context) {
         }
     }
 
-    /**
-     * Enters mixed mode: Bluetooth A2DP for audio output + Built-in mic for input.
-     * Use this for Bluetooth speakers without microphone.
-     *
-     * @param maxBoostDb Loudness boost in dB (0-24)
-     */
-    fun enterMixedBluetoothMode(maxBoostDb: Int = 18) {
+    fun enterMediaLoudSession(maxBoostDb: Int = 24, preferSpeakerForMax: Boolean = false) {
+        preferSpeaker = preferSpeakerForMax
         currentBoostDb = maxBoostDb.coerceIn(MIN_BOOST_DB, MAX_BOOST_DB)
 
-        Log.i(TAG, "Entering mixed BT mode (A2DP output + Built-in mic, boost=${currentBoostDb}dB)")
+        Log.i(TAG, "🔊 Entering media loud session (boost=${currentBoostDb}dB)")
 
         runCatching {
-            // ✅ Use MODE_IN_COMMUNICATION to keep built-in mic active
-            audioManager.mode = SystemAudioManager.MODE_IN_COMMUNICATION
+            // Keep MODE_IN_COMMUNICATION to maintain routing
+            requestAudioFocus(AudioAttributes.USAGE_MEDIA, AudioAttributes.CONTENT_TYPE_MUSIC)
 
-            requestAudioFocus(AudioAttributes.USAGE_VOICE_COMMUNICATION, AudioAttributes.CONTENT_TYPE_SPEECH)
+            // Re-apply boosters with new gain
+            loudnessEnhancer?.apply {
+                setTargetGain(currentBoostDb * 100)
+                if (!enabled) enabled = true
+            }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                routeForMixedMode()
-            } else {
-                routeForMixedModeLegacy()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                dynamicsProcessor?.let { processor ->
+                    val channel = processor.getChannelByChannelIndex(0)
+                    val limiter = channel.limiter
+
+                    limiter.apply {
+                        setEnabled(true)
+                        attackTime = 0.5f
+                        releaseTime = 30f
+                        ratio = 20f
+                        threshold = -2f
+                        postGain = currentBoostDb.toFloat()
+                    }
+
+                    channel.limiter = limiter
+                    processor.setChannelTo(0, channel)
+                }
             }
 
             setStreamsToMaxVolume(SystemAudioManager.STREAM_MUSIC, SystemAudioManager.STREAM_VOICE_CALL)
-            enableAudioBoosters()
 
-            logVolumeState("enterMixedBluetoothMode")
+            logVolumeState("enterMediaLoudSession")
         }.onFailure { e ->
-            Log.e(TAG, "Failed to enter mixed BT mode", e)
+            Log.e(TAG, "Failed to enter media loud session", e)
         }
     }
 
-    /**
-     * Exits current audio session and restores defaults.
-     */
     fun exitVoiceSession() {
         Log.i(TAG, "Exiting audio session")
 
@@ -116,11 +94,6 @@ class AudioSessionManager(private val context: Context) {
         }
     }
 
-    /**
-     * Adjusts boost gain dynamically during session.
-     *
-     * @param db Boost level in dB (0-24)
-     */
     fun setBoostGainDb(db: Int) {
         currentBoostDb = db.coerceIn(MIN_BOOST_DB, MAX_BOOST_DB)
 
@@ -137,7 +110,7 @@ class AudioSessionManager(private val context: Context) {
         }
     }
 
-    // ==================== Audio Routing ====================
+    // ==================== Audio routing ====================
 
     @Suppress("DEPRECATION")
     private fun routeForVoiceCall(maximize: Boolean, preferSpeaker: Boolean) {
@@ -157,9 +130,6 @@ class AudioSessionManager(private val context: Context) {
 
     @RequiresApi(Build.VERSION_CODES.S)
     private fun routeForVoiceCallModern(preferSpeaker: Boolean) {
-        val devices = audioManager.availableCommunicationDevices
-        Log.d(TAG, "Available devices: ${devices.map { "${getDeviceTypeName(it.type)} (${it.productName})" }}")
-
         val targetDevice = if (preferSpeaker) {
             audioManager.availableCommunicationDevices.firstOrNull {
                 it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
@@ -168,125 +138,70 @@ class AudioSessionManager(private val context: Context) {
             findPreferredCommunicationDevice()
         }
 
-        targetDevice?.let { device ->
-            val success = audioManager.setCommunicationDevice(device)
-            Log.d(TAG, "setCommunicationDevice(${getDeviceTypeName(device.type)}): $success")
-
-            val currentDevice = audioManager.communicationDevice
-            Log.d(TAG, "Current device after set: ${currentDevice?.let { getDeviceTypeName(it.type) } ?: "null"}")
+        targetDevice?.let {
+            val success = audioManager.setCommunicationDevice(it)
+            Log.d(TAG, "setCommunicationDevice(${getDeviceTypeName(it.type)}): $success")
         } ?: run {
+            @Suppress("DEPRECATION")
             audioManager.isSpeakerphoneOn = true
-            Log.w(TAG, "No device found, defaulted to speakerphone")
+            Log.d(TAG, "Fallback: isSpeakerphoneOn=true")
         }
     }
 
     @RequiresApi(Build.VERSION_CODES.S)
     private fun findPreferredCommunicationDevice(): AudioDeviceInfo? {
-        // ✅ Priority 1: Bluetooth SCO (headset with mic)
-        val btScoDevice = audioManager.availableCommunicationDevices.firstOrNull {
-            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
-        }
-        if (btScoDevice != null) {
-            Log.d(TAG, "Found BT SCO device (with mic)")
-            return btScoDevice
-        }
-
-        // ✅ Priority 2: Bluetooth A2DP (speaker without mic) - will use built-in mic
-        val btA2dpDevice = audioManager.availableCommunicationDevices.firstOrNull {
-            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
-        }
-        if (btA2dpDevice != null) {
-            Log.d(TAG, "Found BT A2DP device (music only, will use built-in mic)")
-            return btA2dpDevice
-        }
-
-        // ✅ Priority 3: USB Headset (with mic)
-        val usbDevice = audioManager.availableCommunicationDevices.firstOrNull {
-            it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
-                    it.type == AudioDeviceInfo.TYPE_USB_DEVICE
-        }
-        if (usbDevice != null) {
-            Log.d(TAG, "Found USB device")
-            return usbDevice
-        }
-
-        // ✅ Priority 4: Wired Headset (with mic)
-        val wiredDevice = audioManager.availableCommunicationDevices.firstOrNull {
-            it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET
-        }
-        if (wiredDevice != null) {
-            Log.d(TAG, "Found Wired headset")
-            return wiredDevice
-        }
-
-        // ✅ Priority 5: Built-in speaker + mic
-        Log.d(TAG, "No external device, using built-in")
         return audioManager.availableCommunicationDevices.firstOrNull {
+            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                    it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+                    it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET
+        } ?: audioManager.availableCommunicationDevices.firstOrNull {
             it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
         }
-    }
-
-    @RequiresApi(Build.VERSION_CODES.S)
-    private fun routeForMixedMode() {
-        // ✅ Find Bluetooth A2DP for audio output
-        val btA2dpDevice = audioManager.availableCommunicationDevices.firstOrNull {
-            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
-        }
-
-        if (btA2dpDevice != null) {
-            // Route audio output to Bluetooth speaker
-            val success = audioManager.setCommunicationDevice(btA2dpDevice)
-            Log.d(TAG, "Mixed mode: BT A2DP for output ($success), built-in mic for input")
-
-            // Verify
-            val currentDevice = audioManager.communicationDevice
-            Log.d(TAG, "Current device: ${currentDevice?.let { getDeviceTypeName(it.type) } ?: "null"}")
-        } else {
-            // Fallback to speaker if no BT A2DP
-            val speaker = audioManager.availableCommunicationDevices.firstOrNull {
-                it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
-            }
-            speaker?.let { audioManager.setCommunicationDevice(it) }
-            Log.d(TAG, "Mixed mode: No BT A2DP, using built-in speaker + mic")
-        }
-
-        // ✅ Mic will automatically use built-in since we're in MODE_IN_COMMUNICATION
     }
 
     @Suppress("DEPRECATION")
     private fun routeForVoiceCallLegacy(preferSpeaker: Boolean) {
         if (preferSpeaker) {
-            audioManager.stopBluetoothSco()
-            audioManager.isBluetoothScoOn = false
             audioManager.isSpeakerphoneOn = true
-            Log.d(TAG, "Legacy: Force speakerphone ON")
+            runCatching {
+                audioManager.stopBluetoothSco()
+                audioManager.isBluetoothScoOn = false
+            }
+            Log.d(TAG, "Legacy: Forced speaker (isSpeakerphoneOn=true)")
         } else {
-            // Check BT availability
+            // ✅ FIXED: Try BT first, fallback to speaker
             if (audioManager.isBluetoothScoAvailableOffCall) {
-                audioManager.isSpeakerphoneOn = false
-                audioManager.isBluetoothScoOn = true
                 audioManager.startBluetoothSco()
-                Log.d(TAG, "Legacy: BT SCO started")
-
-                // Wait for BT connection
-                Thread.sleep(500)
+                audioManager.isBluetoothScoOn = true
+                Log.d(TAG, "Legacy: BT SCO enabled")
             } else {
-                Log.w(TAG, "Legacy: BT SCO not available")
                 audioManager.isSpeakerphoneOn = true
+                Log.d(TAG, "Legacy: Fallback to speaker")
             }
         }
     }
 
     @Suppress("DEPRECATION")
-    private fun routeForMixedModeLegacy() {
-        // Enable Bluetooth audio (for A2DP)
-        audioManager.isBluetoothA2dpOn = true
-        audioManager.isSpeakerphoneOn = false
+    private fun routeForMedia(maximize: Boolean, preferSpeaker: Boolean) {
+        // ✅ FIXED: Keep MODE_IN_COMMUNICATION to maintain routing
+        // Don't switch to MODE_NORMAL as it may reset device routing
 
-        // Don't use SCO - use A2DP for audio output
-        audioManager.isBluetoothScoOn = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Device already set by routeForVoiceCall, don't change
+            Log.d(TAG, "Media: Keeping current device routing")
+        } else {
+            // For legacy, keep current speaker/BT setting
+            Log.d(TAG, "Media: Keeping legacy routing")
+        }
 
-        Log.d(TAG, "Legacy mixed mode: A2DP ON, SCO OFF")
+        if (maximize) {
+            setStreamsToMaxVolume(SystemAudioManager.STREAM_MUSIC, SystemAudioManager.STREAM_VOICE_CALL)
+
+            // Re-enable boosters if needed
+            if (loudnessEnhancer == null || dynamicsProcessor == null) {
+                enableAudioBoosters()
+            }
+        }
     }
 
     private fun clearDeviceRouting() {
@@ -304,7 +219,7 @@ class AudioSessionManager(private val context: Context) {
         }
     }
 
-    // ==================== Audio Focus Management ====================
+    // ==================== Audio focus management ====================
 
     private fun requestAudioFocus(usage: Int, contentType: Int) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -368,7 +283,7 @@ class AudioSessionManager(private val context: Context) {
         hasAudioFocus = false
     }
 
-    // ==================== Audio Enhancement ====================
+    // ==================== Audio enhancement ====================
 
     private fun enableAudioBoosters() {
         enableLoudnessEnhancer()
@@ -393,7 +308,7 @@ class AudioSessionManager(private val context: Context) {
                 setTargetGain(currentBoostDb * 100)
                 enabled = true
             }
-            Log.d(TAG, "LoudnessEnhancer enabled @ ${currentBoostDb}dB")
+            Log.d(TAG, "✅ LoudnessEnhancer enabled @ ${currentBoostDb}dB")
         }.onFailure { e ->
             Log.w(TAG, "Failed to enable LoudnessEnhancer", e)
         }
@@ -427,17 +342,18 @@ class AudioSessionManager(private val context: Context) {
 
                 limiter.apply {
                     setEnabled(true)
-                    attackTime = 1f
-                    releaseTime = 50f
-                    ratio = 10f
-                    threshold = -1f
+                    attackTime = 0.5f
+                    releaseTime = 30f
+                    ratio = 20f
+                    threshold = -2f
+                    postGain = currentBoostDb.toFloat()
                 }
 
                 channel.limiter = limiter
                 setChannelTo(0, channel)
             }
 
-            Log.d(TAG, "DynamicsProcessing limiter enabled")
+            Log.d(TAG, "✅ DynamicsProcessing limiter enabled")
         }.onFailure { e ->
             Log.w(TAG, "Failed to enable DynamicsProcessing", e)
         }
@@ -453,30 +369,19 @@ class AudioSessionManager(private val context: Context) {
     }
 
     @RequiresApi(Build.VERSION_CODES.P)
-    private fun updateDynamicsProcessingGain() {
-        // Future: Map currentBoostDb to limiter threshold if needed
-    }
+    private fun updateDynamicsProcessingGain() {}
 
-    // ==================== Volume Management ====================
+    // ==================== Volume management ====================
 
     private fun setStreamsToMaxVolume(vararg streams: Int) {
         streams.forEach { stream ->
             val maxVolume = audioManager.getStreamMaxVolume(stream)
-            val currentVolume = audioManager.getStreamVolume(stream)
-
-            if (currentVolume != maxVolume) {
-                audioManager.setStreamVolume(stream, maxVolume, 0)
-                Log.d(TAG, "Set stream $stream to max volume: $maxVolume")
-            }
+            audioManager.setStreamVolume(stream, maxVolume, 0)
         }
     }
 
     private fun restoreMaxVolume(tag: String) {
-        if (audioManager.mode == SystemAudioManager.MODE_IN_COMMUNICATION) {
-            setStreamsToMaxVolume(SystemAudioManager.STREAM_VOICE_CALL, SystemAudioManager.STREAM_MUSIC)
-        } else {
-            setStreamsToMaxVolume(SystemAudioManager.STREAM_MUSIC)
-        }
+        setStreamsToMaxVolume(SystemAudioManager.STREAM_VOICE_CALL, SystemAudioManager.STREAM_MUSIC)
         logVolumeState("restore@$tag")
     }
 
@@ -498,14 +403,13 @@ class AudioSessionManager(private val context: Context) {
         AudioDeviceInfo.TYPE_USB_HEADSET -> "USB_HEADSET"
         AudioDeviceInfo.TYPE_WIRED_HEADSET -> "WIRED_HEADSET"
         AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "SPEAKER"
-        AudioDeviceInfo.TYPE_BUILTIN_MIC -> "BUILTIN_MIC"
         else -> "TYPE_$type"
     }
 
     companion object {
         private const val TAG = "AudioSessionManager"
         private const val MIN_BOOST_DB = 0
-        private const val MAX_BOOST_DB = 24
-        private const val DEFAULT_BOOST_DB = 18
+        private const val MAX_BOOST_DB = 22
+        private const val DEFAULT_BOOST_DB = 22
     }
 }

@@ -26,7 +26,7 @@ fun AgentsListView(
     favorites: List<String>,
     onOpenAgent: (String) -> Unit,
     onPlayAgent: (String) -> Unit,
-    onAvatarView: (String, String?) -> Unit, // ✅ FIXED: (agentId, agentName)
+    onAvatarView: (String, String?) -> Unit,
     onToggleFavorite: (String, Boolean) -> Unit
 ) {
     if (agents.isEmpty()) {
@@ -48,10 +48,10 @@ fun AgentsListView(
                         isFavorite = favorites.contains(agent.agentId),
                         onClick = { onOpenAgent(agent.agentId) },
                         onPlay = {
-                            Log.d("AgentsListView", "▶️ Play: ${agent.name}")
+                            Log.d("AgentsListView", "▶️ Chạy: ${agent.name}")
                             onPlayAgent(agent.agentId)
                         },
-                        onAvatarView = { // ✅ FIXED: Pass both agentId and name
+                        onAvatarView = {
                             Log.d("AgentsListView", "🎭 Avatar: ${agent.name} (${agent.agentId})")
                             onAvatarView(agent.agentId, agent.name)
                         },
@@ -73,10 +73,10 @@ fun AgentsListView(
                         isFavorite = favorites.contains(agent.agentId),
                         onClick = { onOpenAgent(agent.agentId) },
                         onPlay = {
-                            Log.d("AgentsListView", "▶️ Play: ${agent.name}")
+                            Log.d("AgentsListView", "▶️ Chạy: ${agent.name}")
                             onPlayAgent(agent.agentId)
                         },
-                        onAvatarView = { // ✅ FIXED: Pass both agentId and name
+                        onAvatarView = {
                             Log.d("AgentsListView", "🎭 Avatar: ${agent.name} (${agent.agentId})")
                             onAvatarView(agent.agentId, agent.name)
                         },
@@ -116,13 +116,13 @@ private fun EmptyAgentsView() {
             }
 
             Text(
-                "No agents found",
+                "Không tìm thấy agent",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
 
             Text(
-                "Try adjusting your search or filters",
+                "Thử điều chỉnh tìm kiếm hoặc bộ lọc",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

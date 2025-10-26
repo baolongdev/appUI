@@ -15,5 +15,5 @@ enum class HomeSection(
 ) {
     HOME("Home", Icons.Filled.Home),
     MY_AGENTS("My Agents", Icons.Filled.Psychology),
-    HISTORY("History", Icons.Filled.History)
+    HISTORY("Lịch sử", Icons.Filled.History)
 }
