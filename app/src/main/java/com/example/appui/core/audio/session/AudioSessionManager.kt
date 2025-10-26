@@ -151,6 +151,10 @@ class AudioSessionManager(private val context: Context) {
 
     @RequiresApi(Build.VERSION_CODES.S)
     private fun routeForVoiceCallModern(preferSpeaker: Boolean) {
+        // ✅ THÊM: Log available devices
+        val devices = audioManager.availableCommunicationDevices
+        Log.d(TAG, "Available devices: ${devices.map { "${getDeviceTypeName(it.type)} (${it.productName})" }}")
+
         val targetDevice = if (preferSpeaker) {
             audioManager.availableCommunicationDevices.firstOrNull {
                 it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
@@ -159,22 +163,52 @@ class AudioSessionManager(private val context: Context) {
             findPreferredCommunicationDevice()
         }
 
-        targetDevice?.let {
-            audioManager.setCommunicationDevice(it)
-            Log.d(TAG, "Routed to: ${getDeviceTypeName(it.type)}")
+        targetDevice?.let { device ->
+            val success = audioManager.setCommunicationDevice(device)
+            Log.d(TAG, "setCommunicationDevice(${getDeviceTypeName(device.type)}): $success")
+
+            // ✅ THÊM: Verify actual routing
+            val currentDevice = audioManager.communicationDevice
+            Log.d(TAG, "Current device after set: ${currentDevice?.let { getDeviceTypeName(it.type) } ?: "null"}")
         } ?: run {
             audioManager.isSpeakerphoneOn = true
-            Log.d(TAG, "Defaulted to speakerphone")
+            Log.w(TAG, "No device found, defaulted to speakerphone")
         }
     }
 
     @RequiresApi(Build.VERSION_CODES.S)
     private fun findPreferredCommunicationDevice(): AudioDeviceInfo? {
+        // ✅ Priority 1: Bluetooth SCO (headset với mic)
+        val btDevice = audioManager.availableCommunicationDevices.firstOrNull {
+            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+        }
+        if (btDevice != null) {
+            Log.d(TAG, "Found BT SCO device")
+            return btDevice
+        }
+
+        // ✅ Priority 2: USB Headset (có mic)
+        val usbDevice = audioManager.availableCommunicationDevices.firstOrNull {
+            it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+                    it.type == AudioDeviceInfo.TYPE_USB_DEVICE
+        }
+        if (usbDevice != null) {
+            Log.d(TAG, "Found USB device")
+            return usbDevice
+        }
+
+        // ✅ Priority 3: Wired Headset (có mic)
+        val wiredDevice = audioManager.availableCommunicationDevices.firstOrNull {
+            it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET
+        }
+        if (wiredDevice != null) {
+            Log.d(TAG, "Found Wired headset")
+            return wiredDevice
+        }
+
+        // ✅ Priority 4: Fallback - Built-in speaker + mic
+        Log.d(TAG, "No external device, using built-in")
         return audioManager.availableCommunicationDevices.firstOrNull {
-            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                    it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
-                    it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET
-        } ?: audioManager.availableCommunicationDevices.firstOrNull {
             it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
         }
     }
@@ -182,14 +216,24 @@ class AudioSessionManager(private val context: Context) {
     @Suppress("DEPRECATION")
     private fun routeForVoiceCallLegacy(preferSpeaker: Boolean) {
         if (preferSpeaker) {
+            audioManager.stopBluetoothSco()
+            audioManager.isBluetoothScoOn = false
             audioManager.isSpeakerphoneOn = true
-            runCatching {
-                audioManager.stopBluetoothSco()
-                audioManager.isBluetoothScoOn = false
+            Log.d(TAG, "Legacy: Force speakerphone ON")
+        } else {
+            // ✅ THÊM: Check BT availability first
+            if (audioManager.isBluetoothScoAvailableOffCall) {
+                audioManager.isSpeakerphoneOn = false
+                audioManager.isBluetoothScoOn = true
+                audioManager.startBluetoothSco()
+                Log.d(TAG, "Legacy: BT SCO started")
+
+                // ✅ THÊM: Wait for BT connection
+                Thread.sleep(500) // Give time for BT to connect
+            } else {
+                Log.w(TAG, "Legacy: BT SCO not available")
+                audioManager.isSpeakerphoneOn = true
             }
-        } else if (audioManager.isBluetoothScoAvailableOffCall) {
-            audioManager.startBluetoothSco()
-            audioManager.isBluetoothScoOn = true
         }
     }
 
